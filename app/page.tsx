@@ -36,10 +36,22 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<Category>("All");
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [userReactions, setUserReactions] = useState<Record<number, Reaction>>({});
 
   useEffect(() => {
     loadStories();
   }, []);
+
+  useEffect(() => {
+  const saved = localStorage.getItem("storymask_user_reactions");
+  if (saved) {
+    setUserReactions(JSON.parse(saved));
+  }
+}, []);
+
+useEffect(() => {
+  localStorage.setItem("storymask_user_reactions", JSON.stringify(userReactions));
+}, [userReactions]);
 
   async function loadStories() {
     setLoading(true);
@@ -106,20 +118,39 @@ export default function Home() {
   }
 
   function react(id: number, reaction: Reaction) {
-    setStories(
-      stories.map((story) =>
-        story.id === id
-          ? {
-              ...story,
-              reactions: {
-                ...story.reactions,
-                [reaction]: story.reactions[reaction] + 1,
-              },
-            }
-          : story
-      )
-    );
-  }
+  const previousReaction = userReactions[id];
+
+  setStories(
+    stories.map((story) => {
+      if (story.id !== id) return story;
+
+      const newReactions = { ...story.reactions };
+
+      if (previousReaction === reaction) {
+        newReactions[reaction] -= 1;
+
+        const updatedUserReactions = { ...userReactions };
+        delete updatedUserReactions[id];
+        setUserReactions(updatedUserReactions);
+      } else {
+        if (previousReaction) {
+          newReactions[previousReaction] -= 1;
+        }
+
+        newReactions[reaction] += 1;
+        setUserReactions({
+          ...userReactions,
+          [id]: reaction,
+        });
+      }
+
+      return {
+        ...story,
+        reactions: newReactions,
+      };
+    })
+  );
+}
 
   async function deleteStory(id: number) {
     const { error } = await supabase.from("stories").delete().eq("id", id);
