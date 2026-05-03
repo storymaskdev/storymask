@@ -11,6 +11,7 @@ type Story = {
   category: string;
   title: string;
   text: string;
+  featured: boolean;
   created_at: string;
 };
 
@@ -77,6 +78,20 @@ export default function AdminPage() {
     setComments((commentData as Comment[]) || []);
     setReports((reportData as Report[]) || []);
     setLoading(false);
+  }
+
+  async function toggleFeatured(id: number, value: boolean) {
+    const { error } = await supabase
+      .from("stories")
+      .update({ featured: value })
+      .eq("id", id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadAdminData();
   }
 
   async function deleteStory(id: number) {
@@ -163,13 +178,20 @@ export default function AdminPage() {
           <p>Stories</p>
           <b>{stories.length}</b>
         </div>
+
         <div style={styles.statCard}>
           <p>Comments</p>
           <b>{comments.length}</b>
         </div>
+
         <div style={styles.statCard}>
           <p>Open reports</p>
           <b>{reports.filter((r) => r.status === "open").length}</b>
+        </div>
+
+        <div style={styles.statCard}>
+          <p>Featured</p>
+          <b>{stories.filter((s) => s.featured).length}</b>
         </div>
       </section>
 
@@ -195,6 +217,8 @@ export default function AdminPage() {
         <div style={styles.panel}>
           <h2>💬 Comments</h2>
 
+          {comments.length === 0 && <p style={styles.muted}>No comments yet.</p>}
+
           {comments.map((comment) => (
             <div key={comment.id} style={styles.item}>
               <p style={styles.meta}>Story ID: {comment.story_id}</p>
@@ -212,19 +236,32 @@ export default function AdminPage() {
       <section style={styles.panel}>
         <h2>📖 Stories</h2>
 
+        {stories.length === 0 && <p style={styles.muted}>No stories yet.</p>}
+
         {stories.map((story) => (
           <div key={story.id} style={styles.storyItem}>
             <div>
               <p style={styles.meta}>
                 #{story.id} · @{story.nickname} · {story.category}
+                {story.featured ? " · ★ Featured" : ""}
               </p>
+
               <h3>{story.title}</h3>
               <p style={styles.storyText}>{story.text}</p>
             </div>
 
-            <button onClick={() => deleteStory(story.id)} style={styles.deleteButton}>
-              Delete story
-            </button>
+            <div style={styles.actionRow}>
+              <button
+                onClick={() => toggleFeatured(story.id, !story.featured)}
+                style={styles.smallButton}
+              >
+                {story.featured ? "★ Unpin" : "☆ Pin"}
+              </button>
+
+              <button onClick={() => deleteStory(story.id)} style={styles.deleteButton}>
+                Delete story
+              </button>
+            </div>
           </div>
         ))}
       </section>
@@ -301,7 +338,7 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "12px",
     padding: "10px 12px",
     cursor: "pointer",
-    marginTop: "10px",
+    height: "fit-content",
   },
   deleteButton: {
     background: "transparent",
@@ -324,7 +361,7 @@ const styles: Record<string, CSSProperties> = {
     maxWidth: "1200px",
     margin: "0 auto 25px",
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(4, 1fr)",
     gap: "15px",
   },
   statCard: {
@@ -364,6 +401,12 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     gap: "18px",
+  },
+  actionRow: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "flex-start",
+    flexShrink: 0,
   },
   meta: {
     color: "#8b8b8b",
