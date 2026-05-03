@@ -16,6 +16,7 @@ type Story = {
   text: string;
   createdAt: string;
   ownerKey: string | null;
+  featured: boolean;
   reactions: Record<Reaction, number>;
 };
 
@@ -35,6 +36,7 @@ type DbStory = {
   text: string;
   created_at: string;
   owner_key: string | null;
+  featured: boolean | null;
 };
 
 type DbReaction = {
@@ -64,13 +66,14 @@ const ui = {
     share: "Share",
     copied: "Link copied",
     storyDay: "Story of the Day",
+    editorsPick: "Editor&apos;s Pick",
+    selectedWhisper: "Selected Whisper",
     new: "New",
     trending: "Trending",
     loved: "Most Loved",
     deleteMine: "Delete my story",
     ambientOn: "Ambient on",
     ambientOff: "Ambient off",
-    close: "Close",
   },
   de: {
     logo: "ANONYME GESCHICHTEN",
@@ -90,13 +93,14 @@ const ui = {
     share: "Teilen",
     copied: "Link kopiert",
     storyDay: "Geschichte des Tages",
+    editorsPick: "Editor&apos;s Pick",
+    selectedWhisper: "Ausgewähltes Flüstern",
     new: "Neu",
     trending: "Trending",
     loved: "Beliebt",
     deleteMine: "Meine Geschichte löschen",
     ambientOn: "Ambient an",
     ambientOff: "Ambient aus",
-    close: "Schließen",
   },
   ru: {
     logo: "АНОНИМНЫЕ ИСТОРИИ",
@@ -116,13 +120,14 @@ const ui = {
     share: "Поделиться",
     copied: "Ссылка скопирована",
     storyDay: "История дня",
+    editorsPick: "Выбор редактора",
+    selectedWhisper: "Избранный шёпот",
     new: "Новые",
     trending: "В тренде",
     loved: "Любимые",
     deleteMine: "Удалить мою историю",
     ambientOn: "Музыка вкл",
     ambientOff: "Музыка выкл",
-    close: "Закрыть",
   },
   fr: {
     logo: "HISTOIRES ANONYMES",
@@ -142,13 +147,14 @@ const ui = {
     share: "Partager",
     copied: "Lien copié",
     storyDay: "Histoire du jour",
+    editorsPick: "Choix de l&apos;éditeur",
+    selectedWhisper: "Murmure sélectionné",
     new: "Nouveau",
     trending: "Tendance",
     loved: "Aimées",
     deleteMine: "Supprimer mon histoire",
     ambientOn: "Ambient on",
     ambientOff: "Ambient off",
-    close: "Fermer",
   },
   it: {
     logo: "STORIE ANONIME",
@@ -168,13 +174,14 @@ const ui = {
     share: "Condividi",
     copied: "Link copiato",
     storyDay: "Storia del giorno",
+    editorsPick: "Scelta dell&apos;editor",
+    selectedWhisper: "Sussurro scelto",
     new: "Nuove",
     trending: "Tendenza",
     loved: "Più amate",
     deleteMine: "Elimina la mia storia",
     ambientOn: "Ambient on",
     ambientOff: "Ambient off",
-    close: "Chiudi",
   },
 };
 
@@ -271,6 +278,7 @@ export default function Home() {
       text: s.text,
       createdAt: new Date(s.created_at).toLocaleString(),
       ownerKey: s.owner_key,
+      featured: Boolean(s.featured),
       reactions: reactionMap[s.id] || { heart: 0, laugh: 0, fear: 0, shock: 0 },
     }));
 
@@ -295,6 +303,15 @@ export default function Home() {
     const day = new Date().getDate();
     return stories[day % stories.length];
   }, [stories]);
+
+  const featuredStories = useMemo(() => {
+    return stories.filter((story) => story.featured);
+  }, [stories]);
+
+  const editorPick = useMemo(() => {
+    if (featuredStories.length > 0) return featuredStories[0];
+    return null;
+  }, [featuredStories]);
 
   const filteredStories = useMemo(() => {
     let result = [...stories];
@@ -334,6 +351,7 @@ export default function Home() {
       title: title.trim().slice(0, 90),
       text: text.trim().slice(0, 2500),
       owner_key: ownerKey,
+      featured: false,
     });
 
     if (error) {
@@ -455,7 +473,8 @@ export default function Home() {
       return;
     }
 
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioContextClass =
+      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     const context = new AudioContextClass();
     const gain = context.createGain();
 
@@ -489,6 +508,19 @@ export default function Home() {
     setOpenedStory(story);
   }
 
+  function StoryPreview({ story }: { story: Story }) {
+    return (
+      <div style={styles.previewCard} onClick={() => openStory(story)}>
+        <div style={styles.cardTop}>
+          <p style={styles.meta}>@{story.nickname} · {story.createdAt}</p>
+          <span style={styles.badge}>{story.category}</span>
+        </div>
+        <h3 style={styles.previewTitle}>{story.title}</h3>
+        <p style={styles.previewText}>{story.text.slice(0, 220)}...</p>
+      </div>
+    );
+  }
+
   return (
     <main style={styles.page}>
       <style>{`
@@ -499,8 +531,13 @@ export default function Home() {
         }
 
         @keyframes softPulse {
-          0%, 100% { opacity: .55; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.04); }
+          0%, 100% { opacity: .72; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.02); }
+        }
+
+        @keyframes shimmer {
+          0% { background-position: -300px 0; }
+          100% { background-position: 300px 0; }
         }
 
         .story-card:hover {
@@ -533,6 +570,10 @@ export default function Home() {
           .storymask-form {
             position: static !important;
           }
+
+          .pick-grid {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
 
@@ -557,7 +598,9 @@ export default function Home() {
       <section style={styles.hero}>
         <div>
           <p style={styles.logo}>{t.logo}</p>
-          <h1 className="storymask-title" style={styles.title}>StoryMask</h1>
+          <h1 className="storymask-title" style={styles.title}>
+            StoryMask
+          </h1>
           <p style={styles.subtitle}>{t.subtitle}</p>
         </div>
 
@@ -570,15 +613,41 @@ export default function Home() {
             <option value="it">IT</option>
           </select>
 
-          <button onClick={randomStory} style={styles.mainButton}>{t.random}</button>
+          <button onClick={randomStory} style={styles.mainButton}>
+            {t.random}
+          </button>
         </div>
       </section>
 
-      {storyOfDay && (
-        <section style={styles.storyDay} onClick={() => openStory(storyOfDay)}>
-          <p style={styles.storyDayLabel}>✦ {t.storyDay}</p>
-          <h2 style={styles.storyDayTitle}>{storyOfDay.title}</h2>
-          <p style={styles.storyDayText}>{storyOfDay.text.slice(0, 180)}...</p>
+      {(editorPick || storyOfDay) && (
+        <section className="pick-grid" style={styles.pickGrid}>
+          {editorPick && (
+            <div style={styles.editorPick} onClick={() => openStory(editorPick)}>
+              <p style={styles.pickLabel}>★ {t.editorsPick}</p>
+              <h2 style={styles.pickTitle}>{editorPick.title}</h2>
+              <p style={styles.pickText}>{editorPick.text.slice(0, 210)}...</p>
+              <p style={styles.pickMeta}>@{editorPick.nickname} · {editorPick.category}</p>
+            </div>
+          )}
+
+          {storyOfDay && (
+            <div style={styles.storyDay} onClick={() => openStory(storyOfDay)}>
+              <p style={styles.storyDayLabel}>✦ {t.storyDay}</p>
+              <h2 style={styles.storyDayTitle}>{storyOfDay.title}</h2>
+              <p style={styles.storyDayText}>{storyOfDay.text.slice(0, 180)}...</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {featuredStories.length > 1 && (
+        <section style={styles.featuredStrip}>
+          <p style={styles.featuredTitle}>✦ {t.selectedWhisper}</p>
+          <div style={styles.featuredList}>
+            {featuredStories.slice(1, 4).map((story) => (
+              <StoryPreview key={story.id} story={story} />
+            ))}
+          </div>
         </section>
       )}
 
@@ -613,9 +682,24 @@ export default function Home() {
           </div>
 
           <div style={styles.sortBar}>
-            <button onClick={() => setSortMode("new")} style={{ ...styles.sortButton, background: sortMode === "new" ? "#7e22ce" : "#151515" }}>{t.new}</button>
-            <button onClick={() => setSortMode("trending")} style={{ ...styles.sortButton, background: sortMode === "trending" ? "#7e22ce" : "#151515" }}>🔥 {t.trending}</button>
-            <button onClick={() => setSortMode("loved")} style={{ ...styles.sortButton, background: sortMode === "loved" ? "#7e22ce" : "#151515" }}>❤️ {t.loved}</button>
+            <button
+              onClick={() => setSortMode("new")}
+              style={{ ...styles.sortButton, background: sortMode === "new" ? "#7e22ce" : "#151515" }}
+            >
+              {t.new}
+            </button>
+            <button
+              onClick={() => setSortMode("trending")}
+              style={{ ...styles.sortButton, background: sortMode === "trending" ? "#7e22ce" : "#151515" }}
+            >
+              🔥 {t.trending}
+            </button>
+            <button
+              onClick={() => setSortMode("loved")}
+              style={{ ...styles.sortButton, background: sortMode === "loved" ? "#7e22ce" : "#151515" }}
+            >
+              ❤️ {t.loved}
+            </button>
           </div>
 
           <h2 style={styles.sectionTitle}>{t.stories}</h2>
@@ -634,12 +718,21 @@ export default function Home() {
                 }}
               >
                 <div style={styles.cardTop} onClick={() => openStory(story)}>
-                  <p style={styles.meta}>@{story.nickname} · {story.createdAt}</p>
-                  <span style={styles.badge}>{story.category}</span>
+                  <p style={styles.meta}>
+                    @{story.nickname} · {story.createdAt}
+                  </p>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {story.featured && <span style={styles.featuredBadge}>★ Featured</span>}
+                    <span style={styles.badge}>{story.category}</span>
+                  </div>
                 </div>
 
-                <h3 onClick={() => openStory(story)} style={styles.storyTitle}>{story.title}</h3>
-                <p onClick={() => openStory(story)} style={styles.storyText}>{story.text}</p>
+                <h3 onClick={() => openStory(story)} style={styles.storyTitle}>
+                  {story.title}
+                </h3>
+                <p onClick={() => openStory(story)} style={styles.storyText}>
+                  {story.text}
+                </p>
 
                 <div style={styles.reactions}>
                   <button onClick={() => react(story.id, "heart")} style={reactionStyle(myReaction[story.id] === "heart")}>❤️ {story.reactions.heart}</button>
@@ -650,9 +743,13 @@ export default function Home() {
 
                 <div style={styles.cardActions}>
                   <button onClick={() => shareStory(story)} style={styles.actionButton}>↗ {t.share}</button>
-                  <button onClick={() => reportStory(story.id)} style={styles.actionButton}>{reported[story.id] ? `✓ ${t.reported}` : `⚐ ${t.report}`}</button>
+                  <button onClick={() => reportStory(story.id)} style={styles.actionButton}>
+                    {reported[story.id] ? `✓ ${t.reported}` : `⚐ ${t.report}`}
+                  </button>
                   {story.ownerKey === ownerKey && (
-                    <button onClick={() => deleteMyStory(story)} style={styles.deleteButton}>{t.deleteMine}</button>
+                    <button onClick={() => deleteMyStory(story)} style={styles.deleteButton}>
+                      {t.deleteMine}
+                    </button>
                   )}
                 </div>
 
@@ -716,7 +813,10 @@ export default function Home() {
             </button>
 
             <p style={styles.meta}>@{openedStory.nickname} · {openedStory.createdAt}</p>
-            <span style={styles.badge}>{openedStory.category}</span>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {openedStory.featured && <span style={styles.featuredBadge}>★ Featured</span>}
+              <span style={styles.badge}>{openedStory.category}</span>
+            </div>
 
             <h2 style={styles.modalTitle}>{openedStory.title}</h2>
             <p style={styles.modalText}>{openedStory.text}</p>
@@ -745,7 +845,9 @@ export default function Home() {
                   onChange={(e) => setCommentTexts({ ...commentTexts, [openedStory.id]: e.target.value })}
                   style={styles.commentInput}
                 />
-                <button onClick={() => addComment(openedStory.id)} style={styles.commentButton}>{t.send}</button>
+                <button onClick={() => addComment(openedStory.id)} style={styles.commentButton}>
+                  {t.send}
+                </button>
               </div>
             </div>
           </div>
@@ -818,7 +920,16 @@ const styles: Record<string, CSSProperties> = {
   },
   heroActions: { display: "flex", gap: "12px", alignItems: "flex-start" },
   logo: { color: "#c084fc", letterSpacing: "5px", fontSize: "13px" },
-  title: { fontSize: "70px", margin: "10px 0", fontWeight: 900 },
+  title: {
+    fontSize: "70px",
+    margin: "10px 0",
+    fontWeight: 900,
+    background: "linear-gradient(90deg, #fff, #c084fc, #fff)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    backgroundSize: "300px 100%",
+    animation: "shimmer 6s linear infinite",
+  },
   subtitle: { color: "#d4d4d8", fontSize: "22px" },
   select: {
     background: "#111",
@@ -836,21 +947,64 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: "bold",
     cursor: "pointer",
   },
-  storyDay: {
+  pickGrid: {
     maxWidth: "1200px",
     margin: "25px auto",
+    display: "grid",
+    gridTemplateColumns: "1.15fr .85fr",
+    gap: "18px",
+    position: "relative",
+    zIndex: 1,
+  },
+  editorPick: {
+    padding: "30px",
+    borderRadius: "28px",
+    background:
+      "linear-gradient(135deg, rgba(126,34,206,.75), rgba(0,0,0,.76)), radial-gradient(circle at top right, rgba(216,180,254,.35), transparent 35%)",
+    border: "1px solid #c084fc",
+    cursor: "pointer",
+    boxShadow: "0 0 55px rgba(168,85,247,.22)",
+  },
+  pickLabel: { color: "#f5d0fe", letterSpacing: "4px", fontSize: "12px" },
+  pickTitle: { fontSize: "38px", margin: "10px 0" },
+  pickText: { color: "#f3e8ff", fontSize: "18px", lineHeight: "1.65" },
+  pickMeta: { color: "#e9d5ff", fontSize: "14px" },
+  storyDay: {
     padding: "26px",
     borderRadius: "26px",
     background: "linear-gradient(135deg, rgba(88,28,135,.55), rgba(0,0,0,.6))",
     border: "1px solid #6b21a8",
     cursor: "pointer",
-    position: "relative",
-    zIndex: 1,
     animation: "softPulse 4s ease-in-out infinite",
   },
   storyDayLabel: { color: "#d8b4fe", letterSpacing: "4px", fontSize: "12px" },
   storyDayTitle: { fontSize: "32px", margin: "8px 0" },
   storyDayText: { color: "#d4d4d8", fontSize: "17px" },
+  featuredStrip: {
+    maxWidth: "1200px",
+    margin: "0 auto 25px",
+    padding: "22px",
+    borderRadius: "24px",
+    background: "rgba(10,10,10,.75)",
+    border: "1px solid #27272a",
+    position: "relative",
+    zIndex: 1,
+  },
+  featuredTitle: { color: "#d8b4fe", fontWeight: "bold", marginBottom: "14px" },
+  featuredList: {
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
+    gap: "14px",
+  },
+  previewCard: {
+    padding: "18px",
+    borderRadius: "18px",
+    border: "1px solid #3b0764",
+    background: "rgba(20,20,20,.9)",
+    cursor: "pointer",
+  },
+  previewTitle: { fontSize: "20px", margin: "10px 0" },
+  previewText: { color: "#d4d4d8", lineHeight: "1.55" },
   adBox: {
     maxWidth: "1200px",
     margin: "25px auto",
@@ -923,7 +1077,15 @@ const styles: Record<string, CSSProperties> = {
     padding: "7px 12px",
     fontSize: "13px",
     display: "inline-block",
-    marginTop: "8px",
+  },
+  featuredBadge: {
+    background: "rgba(126,34,206,.35)",
+    color: "#f5d0fe",
+    border: "1px solid #7e22ce",
+    borderRadius: "999px",
+    padding: "7px 12px",
+    fontSize: "13px",
+    display: "inline-block",
   },
   storyTitle: { fontSize: "28px", marginTop: "15px", marginBottom: "10px", cursor: "pointer" },
   storyText: { color: "#d4d4d8", fontSize: "18px", lineHeight: "1.7", whiteSpace: "pre-wrap", cursor: "pointer" },
