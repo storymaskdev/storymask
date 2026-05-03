@@ -68,6 +68,9 @@ const ui = {
     trending: "Trending",
     loved: "Most Loved",
     deleteMine: "Delete my story",
+    ambientOn: "Ambient on",
+    ambientOff: "Ambient off",
+    close: "Close",
   },
   de: {
     logo: "ANONYME GESCHICHTEN",
@@ -91,6 +94,9 @@ const ui = {
     trending: "Trending",
     loved: "Beliebt",
     deleteMine: "Meine Geschichte löschen",
+    ambientOn: "Ambient an",
+    ambientOff: "Ambient aus",
+    close: "Schließen",
   },
   ru: {
     logo: "АНОНИМНЫЕ ИСТОРИИ",
@@ -114,6 +120,9 @@ const ui = {
     trending: "В тренде",
     loved: "Любимые",
     deleteMine: "Удалить мою историю",
+    ambientOn: "Музыка вкл",
+    ambientOff: "Музыка выкл",
+    close: "Закрыть",
   },
   fr: {
     logo: "HISTOIRES ANONYMES",
@@ -137,6 +146,9 @@ const ui = {
     trending: "Tendance",
     loved: "Aimées",
     deleteMine: "Supprimer mon histoire",
+    ambientOn: "Ambient on",
+    ambientOff: "Ambient off",
+    close: "Fermer",
   },
   it: {
     logo: "STORIE ANONIME",
@@ -160,6 +172,9 @@ const ui = {
     trending: "Tendenza",
     loved: "Più amate",
     deleteMine: "Elimina la mia storia",
+    ambientOn: "Ambient on",
+    ambientOff: "Ambient off",
+    close: "Chiudi",
   },
 };
 
@@ -184,7 +199,13 @@ export default function Home() {
   const [ownerKey, setOwnerKey] = useState("");
   const [loading, setLoading] = useState(true);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const [openedStory, setOpenedStory] = useState<Story | null>(null);
+  const [ambientOn, setAmbientOn] = useState(false);
+
   const storyRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const audioRef = useRef<AudioContext | null>(null);
+  const oscillatorsRef = useRef<OscillatorNode[]>([]);
+  const gainRef = useRef<GainNode | null>(null);
 
   const t = ui[language];
 
@@ -194,6 +215,7 @@ export default function Home() {
       key = makeKey();
       localStorage.setItem("storymask_owner_key", key);
     }
+
     setOwnerKey(key);
 
     const savedLang = localStorage.getItem("storymask_language") as Language | null;
@@ -221,7 +243,10 @@ export default function Home() {
     }
 
     const { data: reactionData } = await supabase.from("reactions").select("*");
-    const { data: commentData } = await supabase.from("comments").select("*").order("created_at", { ascending: true });
+    const { data: commentData } = await supabase
+      .from("comments")
+      .select("*")
+      .order("created_at", { ascending: true });
 
     const reactionMap: Record<number, Record<Reaction, number>> = {};
     const myMap: Record<number, Reaction> = {};
@@ -230,6 +255,7 @@ export default function Home() {
       if (!reactionMap[r.story_id]) {
         reactionMap[r.story_id] = { heart: 0, laugh: 0, fear: 0, shock: 0 };
       }
+
       reactionMap[r.story_id][r.reaction] += 1;
 
       if (r.user_key === currentKey) {
@@ -237,7 +263,7 @@ export default function Home() {
       }
     });
 
-    const loaded: Story[] = (storyData as DbStory[]).map((s) => ({
+    const loadedStories: Story[] = (storyData as DbStory[]).map((s) => ({
       id: s.id,
       nickname: s.nickname,
       category: s.category,
@@ -254,7 +280,7 @@ export default function Home() {
       commentMap[c.story_id].push(c);
     });
 
-    setStories(loaded);
+    setStories(loadedStories);
     setComments(commentMap);
     setMyReaction(myMap);
     setLoading(false);
@@ -385,6 +411,18 @@ export default function Home() {
 
   async function shareStory(story: Story) {
     const link = `${window.location.origin}?story=${story.id}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: story.title,
+          text: story.text.slice(0, 120),
+          url: link,
+        });
+        return;
+      } catch {}
+    }
+
     await navigator.clipboard.writeText(link);
     alert(t.copied);
   }
@@ -404,14 +442,122 @@ export default function Home() {
     setTimeout(() => setHighlightedId(null), 3500);
   }
 
+  function toggleAmbient() {
+    if (ambientOn) {
+      oscillatorsRef.current.forEach((osc) => osc.stop());
+      oscillatorsRef.current = [];
+
+      if (gainRef.current) {
+        gainRef.current.gain.value = 0;
+      }
+
+      setAmbientOn(false);
+      return;
+    }
+
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const context = new AudioContextClass();
+    const gain = context.createGain();
+
+    gain.gain.value = 0.018;
+    gain.connect(context.destination);
+
+    const notes = [196, 246.94, 293.66, 392];
+
+    const oscillators = notes.map((frequency, index) => {
+      const osc = context.createOscillator();
+      const noteGain = context.createGain();
+
+      osc.type = index % 2 === 0 ? "sine" : "triangle";
+      osc.frequency.value = frequency;
+      noteGain.gain.value = 0.18 / notes.length;
+
+      osc.connect(noteGain);
+      noteGain.connect(gain);
+      osc.start();
+
+      return osc;
+    });
+
+    audioRef.current = context;
+    gainRef.current = gain;
+    oscillatorsRef.current = oscillators;
+    setAmbientOn(true);
+  }
+
+  function openStory(story: Story) {
+    setOpenedStory(story);
+  }
+
   return (
     <main style={styles.page}>
+      <style>{`
+        @keyframes floatParticle {
+          0% { transform: translateY(0px); opacity: .15; }
+          50% { opacity: .45; }
+          100% { transform: translateY(-120vh); opacity: .05; }
+        }
+
+        @keyframes softPulse {
+          0%, 100% { opacity: .55; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.04); }
+        }
+
+        .story-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 0 42px rgba(168, 85, 247, 0.24) !important;
+          border-color: #7e22ce !important;
+        }
+
+        .ambient-dot {
+          position: fixed;
+          bottom: -20px;
+          width: 4px;
+          height: 4px;
+          border-radius: 999px;
+          background: rgba(216,180,254,.7);
+          pointer-events: none;
+          animation: floatParticle linear infinite;
+          z-index: 0;
+        }
+
+        @media (max-width: 900px) {
+          .storymask-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .storymask-title {
+            font-size: 48px !important;
+          }
+
+          .storymask-form {
+            position: static !important;
+          }
+        }
+      `}</style>
+
       <div style={styles.noise} />
+
+      {Array.from({ length: 28 }).map((_, index) => (
+        <span
+          key={index}
+          className="ambient-dot"
+          style={{
+            left: `${(index * 37) % 100}%`,
+            animationDuration: `${9 + (index % 8)}s`,
+            animationDelay: `${index * 0.45}s`,
+          }}
+        />
+      ))}
+
+      <button onClick={toggleAmbient} style={styles.ambientButton}>
+        {ambientOn ? `🎵 ${t.ambientOn}` : `🎧 ${t.ambientOff}`}
+      </button>
 
       <section style={styles.hero}>
         <div>
           <p style={styles.logo}>{t.logo}</p>
-          <h1 style={styles.title}>StoryMask</h1>
+          <h1 className="storymask-title" style={styles.title}>StoryMask</h1>
           <p style={styles.subtitle}>{t.subtitle}</p>
         </div>
 
@@ -429,7 +575,7 @@ export default function Home() {
       </section>
 
       {storyOfDay && (
-        <section style={styles.storyDay}>
+        <section style={styles.storyDay} onClick={() => openStory(storyOfDay)}>
           <p style={styles.storyDayLabel}>✦ {t.storyDay}</p>
           <h2 style={styles.storyDayTitle}>{storyOfDay.title}</h2>
           <p style={styles.storyDayText}>{storyOfDay.text.slice(0, 180)}...</p>
@@ -441,7 +587,7 @@ export default function Home() {
         <p style={styles.adText}>Your ad could be here</p>
       </div>
 
-      <section style={styles.grid}>
+      <section className="storymask-grid" style={styles.grid}>
         <div>
           <input
             placeholder={t.search}
@@ -480,19 +626,20 @@ export default function Home() {
           {filteredStories.map((story, index) => (
             <div key={story.id} ref={(el) => { storyRefs.current[story.id] = el; }}>
               <article
+                className="story-card"
                 style={{
                   ...styles.card,
                   boxShadow: highlightedId === story.id ? "0 0 55px rgba(168,85,247,.55)" : "0 0 0 transparent",
                   border: highlightedId === story.id ? "1px solid #c084fc" : "1px solid #27272a",
                 }}
               >
-                <div style={styles.cardTop}>
+                <div style={styles.cardTop} onClick={() => openStory(story)}>
                   <p style={styles.meta}>@{story.nickname} · {story.createdAt}</p>
                   <span style={styles.badge}>{story.category}</span>
                 </div>
 
-                <h3 style={styles.storyTitle}>{story.title}</h3>
-                <p style={styles.storyText}>{story.text}</p>
+                <h3 onClick={() => openStory(story)} style={styles.storyTitle}>{story.title}</h3>
+                <p onClick={() => openStory(story)} style={styles.storyText}>{story.text}</p>
 
                 <div style={styles.reactions}>
                   <button onClick={() => react(story.id, "heart")} style={reactionStyle(myReaction[story.id] === "heart")}>❤️ {story.reactions.heart}</button>
@@ -512,7 +659,7 @@ export default function Home() {
                 <div style={styles.commentsBox}>
                   <p style={styles.commentsTitle}>💬 {t.comments}</p>
 
-                  {(comments[story.id] || []).slice(0, 5).map((comment) => (
+                  {(comments[story.id] || []).slice(0, 3).map((comment) => (
                     <div key={comment.id} style={styles.comment}>
                       <b>@{comment.nickname}</b>
                       <p>{comment.text}</p>
@@ -536,7 +683,7 @@ export default function Home() {
           ))}
         </div>
 
-        <aside style={styles.formBox}>
+        <aside className="storymask-form" style={styles.formBox}>
           <h2 style={styles.formTitle}>{t.write}</h2>
           <p style={styles.formText}>{t.formText}</p>
 
@@ -560,6 +707,50 @@ export default function Home() {
           <div style={styles.formAd}>Advertisement</div>
         </aside>
       </section>
+
+      {openedStory && (
+        <div style={styles.modalOverlay} onClick={() => setOpenedStory(null)}>
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setOpenedStory(null)} style={styles.modalClose}>
+              ×
+            </button>
+
+            <p style={styles.meta}>@{openedStory.nickname} · {openedStory.createdAt}</p>
+            <span style={styles.badge}>{openedStory.category}</span>
+
+            <h2 style={styles.modalTitle}>{openedStory.title}</h2>
+            <p style={styles.modalText}>{openedStory.text}</p>
+
+            <div style={styles.reactions}>
+              <button onClick={() => react(openedStory.id, "heart")} style={reactionStyle(myReaction[openedStory.id] === "heart")}>❤️ {openedStory.reactions.heart}</button>
+              <button onClick={() => react(openedStory.id, "laugh")} style={reactionStyle(myReaction[openedStory.id] === "laugh")}>😂 {openedStory.reactions.laugh}</button>
+              <button onClick={() => react(openedStory.id, "fear")} style={reactionStyle(myReaction[openedStory.id] === "fear")}>😨 {openedStory.reactions.fear}</button>
+              <button onClick={() => react(openedStory.id, "shock")} style={reactionStyle(myReaction[openedStory.id] === "shock")}>🤯 {openedStory.reactions.shock}</button>
+            </div>
+
+            <div style={styles.commentsBox}>
+              <p style={styles.commentsTitle}>💬 {t.comments}</p>
+
+              {(comments[openedStory.id] || []).map((comment) => (
+                <div key={comment.id} style={styles.comment}>
+                  <b>@{comment.nickname}</b>
+                  <p>{comment.text}</p>
+                </div>
+              ))}
+
+              <div style={styles.commentForm}>
+                <input
+                  placeholder={t.comment}
+                  value={commentTexts[openedStory.id] || ""}
+                  onChange={(e) => setCommentTexts({ ...commentTexts, [openedStory.id]: e.target.value })}
+                  style={styles.commentInput}
+                />
+                <button onClick={() => addComment(openedStory.id)} style={styles.commentButton}>{t.send}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -595,6 +786,20 @@ const styles: Record<string, CSSProperties> = {
     backgroundImage:
       "linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px)",
     backgroundSize: "42px 42px",
+    zIndex: 0,
+  },
+  ambientButton: {
+    position: "fixed",
+    right: "22px",
+    bottom: "22px",
+    zIndex: 50,
+    background: "rgba(10,10,10,.86)",
+    color: "#e9d5ff",
+    border: "1px solid #581c87",
+    borderRadius: "999px",
+    padding: "12px 16px",
+    cursor: "pointer",
+    boxShadow: "0 0 25px rgba(168,85,247,.25)",
   },
   hero: {
     maxWidth: "1200px",
@@ -608,6 +813,8 @@ const styles: Record<string, CSSProperties> = {
     gap: "25px",
     flexWrap: "wrap",
     boxShadow: "0 0 45px rgba(126,34,206,.14)",
+    position: "relative",
+    zIndex: 1,
   },
   heroActions: { display: "flex", gap: "12px", alignItems: "flex-start" },
   logo: { color: "#c084fc", letterSpacing: "5px", fontSize: "13px" },
@@ -636,6 +843,10 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "26px",
     background: "linear-gradient(135deg, rgba(88,28,135,.55), rgba(0,0,0,.6))",
     border: "1px solid #6b21a8",
+    cursor: "pointer",
+    position: "relative",
+    zIndex: 1,
+    animation: "softPulse 4s ease-in-out infinite",
   },
   storyDayLabel: { color: "#d8b4fe", letterSpacing: "4px", fontSize: "12px" },
   storyDayTitle: { fontSize: "32px", margin: "8px 0" },
@@ -652,6 +863,8 @@ const styles: Record<string, CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     color: "#71717a",
+    position: "relative",
+    zIndex: 1,
   },
   adSmall: { letterSpacing: "4px", fontSize: "11px" },
   adText: { marginTop: "5px" },
@@ -661,6 +874,8 @@ const styles: Record<string, CSSProperties> = {
     display: "grid",
     gridTemplateColumns: "1fr 360px",
     gap: "25px",
+    position: "relative",
+    zIndex: 1,
   },
   search: {
     width: "100%",
@@ -697,6 +912,7 @@ const styles: Record<string, CSSProperties> = {
     padding: "25px",
     marginBottom: "20px",
     transition: "0.35s",
+    cursor: "default",
   },
   cardTop: { display: "flex", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" },
   meta: { color: "#8b8b8b", fontSize: "14px" },
@@ -706,9 +922,11 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "999px",
     padding: "7px 12px",
     fontSize: "13px",
+    display: "inline-block",
+    marginTop: "8px",
   },
-  storyTitle: { fontSize: "28px", marginTop: "15px", marginBottom: "10px" },
-  storyText: { color: "#d4d4d8", fontSize: "18px", lineHeight: "1.7", whiteSpace: "pre-wrap" },
+  storyTitle: { fontSize: "28px", marginTop: "15px", marginBottom: "10px", cursor: "pointer" },
+  storyText: { color: "#d4d4d8", fontSize: "18px", lineHeight: "1.7", whiteSpace: "pre-wrap", cursor: "pointer" },
   reactions: { display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "20px" },
   cardActions: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "18px" },
   actionButton: {
@@ -819,4 +1037,41 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "18px",
     color: "#777",
   },
+  modalOverlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.76)",
+    backdropFilter: "blur(10px)",
+    zIndex: 100,
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: "25px",
+  },
+  modal: {
+    width: "min(860px, 100%)",
+    maxHeight: "86vh",
+    overflowY: "auto",
+    background: "linear-gradient(145deg, rgba(12,12,12,.98), rgba(35,10,55,.96))",
+    border: "1px solid #7e22ce",
+    borderRadius: "30px",
+    padding: "30px",
+    boxShadow: "0 0 80px rgba(168,85,247,.28)",
+    position: "relative",
+  },
+  modalClose: {
+    position: "absolute",
+    top: "18px",
+    right: "20px",
+    background: "transparent",
+    color: "white",
+    border: "1px solid #444",
+    borderRadius: "999px",
+    width: "38px",
+    height: "38px",
+    cursor: "pointer",
+    fontSize: "24px",
+  },
+  modalTitle: { fontSize: "40px", marginTop: "20px", marginBottom: "16px" },
+  modalText: { color: "#e5e5e5", fontSize: "20px", lineHeight: "1.8", whiteSpace: "pre-wrap" },
 };
