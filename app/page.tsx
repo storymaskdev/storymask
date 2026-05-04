@@ -26,6 +26,7 @@ type Comment = {
   parent_id: number | null;
   nickname: string;
   text: string;
+  owner_key: string | null;
   created_at: string;
 };
 
@@ -48,6 +49,14 @@ type DbReaction = {
 
 const categories: Category[] = ["All", "Creepy", "Funny", "Scary", "Sad", "Love", "Secret"];
 
+const alphabets: Record<Language, string> = {
+  en: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+  de: "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜabcdefghijklmnopqrstuvwxyzäöüß0123456789",
+  ru: "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя0123456789",
+  fr: "ABCDEFGHIJKLMNOPQRSTUVWXYZÀÂÇÉÈÊËÎÏÔÙÛÜŸabcdefghijklmnopqrstuvwxyzàâçéèêëîïôùûüÿ0123456789",
+  it: "ABCDEFGHIJKLMNOPQRSTUVWXYZÀÈÉÌÍÎÒÓÙabcdefghijklmnopqrstuvwxyzàèéìíîòóù0123456789",
+};
+
 const ui = {
   en: {
     logo: "ANONYMOUS STORIES",
@@ -69,14 +78,14 @@ const ui = {
     share: "Share",
     copied: "Link copied",
     storyDay: "Story of the Day",
-    editorsPick: "Editor&apos;s Pick",
+    editorsPick: "Editor’s Pick",
     selectedWhisper: "Selected Whisper",
     new: "New",
     trending: "Trending",
     loved: "Most Loved",
     deleteMine: "Delete my story",
-    ambientOn: "Ambient on",
-    ambientOff: "Ambient off",
+    ambientOn: "Night ambience on",
+    ambientOff: "Night ambience off",
   },
   de: {
     logo: "ANONYME GESCHICHTEN",
@@ -98,14 +107,14 @@ const ui = {
     share: "Teilen",
     copied: "Link kopiert",
     storyDay: "Geschichte des Tages",
-    editorsPick: "Editor&apos;s Pick",
+    editorsPick: "Editor’s Pick",
     selectedWhisper: "Ausgewähltes Flüstern",
     new: "Neu",
     trending: "Trending",
     loved: "Beliebt",
     deleteMine: "Meine Geschichte löschen",
-    ambientOn: "Ambient an",
-    ambientOff: "Ambient aus",
+    ambientOn: "Nachtklang an",
+    ambientOff: "Nachtklang aus",
   },
   ru: {
     logo: "АНОНИМНЫЕ ИСТОРИИ",
@@ -133,8 +142,8 @@ const ui = {
     trending: "В тренде",
     loved: "Любимые",
     deleteMine: "Удалить мою историю",
-    ambientOn: "Музыка вкл",
-    ambientOff: "Музыка выкл",
+    ambientOn: "Ночь вкл",
+    ambientOff: "Ночь выкл",
   },
   fr: {
     logo: "HISTOIRES ANONYMES",
@@ -156,14 +165,14 @@ const ui = {
     share: "Partager",
     copied: "Lien copié",
     storyDay: "Histoire du jour",
-    editorsPick: "Choix de l&apos;éditeur",
+    editorsPick: "Choix de l’éditeur",
     selectedWhisper: "Murmure sélectionné",
     new: "Nouveau",
     trending: "Tendance",
     loved: "Aimées",
     deleteMine: "Supprimer mon histoire",
-    ambientOn: "Ambient on",
-    ambientOff: "Ambient off",
+    ambientOn: "Nuit on",
+    ambientOff: "Nuit off",
   },
   it: {
     logo: "STORIE ANONIME",
@@ -185,19 +194,48 @@ const ui = {
     share: "Condividi",
     copied: "Link copiato",
     storyDay: "Storia del giorno",
-    editorsPick: "Scelta dell&apos;editor",
+    editorsPick: "Scelta dell’editor",
     selectedWhisper: "Sussurro scelto",
     new: "Nuove",
     trending: "Tendenza",
     loved: "Più amate",
     deleteMine: "Elimina la mia storia",
-    ambientOn: "Ambient on",
-    ambientOff: "Ambient off",
+    ambientOn: "Notte on",
+    ambientOff: "Notte off",
   },
 };
 
 function makeKey() {
   return crypto.randomUUID();
+}
+
+function hashString(value: string) {
+  let hash = 2166136261;
+
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function makeDisplayCode(seed: string | null | undefined, language: Language) {
+  const alphabet = alphabets[language] || alphabets.en;
+  let hash = hashString(`${seed || "unknown"}-${language}-storymask`);
+  let result = "";
+
+  for (let i = 0; i < 10; i++) {
+    hash = Math.imul(hash ^ (hash >>> 13), 2246822519) >>> 0;
+    result += alphabet[hash % alphabet.length];
+  }
+
+  return result;
+}
+
+function displayName(name: string, seed: string | null | undefined, language: Language) {
+  const clean = name?.trim() || "anonymous";
+  return `@${clean} (${makeDisplayCode(seed || clean, language)})`;
 }
 
 export default function Home() {
@@ -224,8 +262,8 @@ export default function Home() {
 
   const storyRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const audioRef = useRef<AudioContext | null>(null);
-  const oscillatorsRef = useRef<OscillatorNode[]>([]);
-  const gainRef = useRef<GainNode | null>(null);
+  const audioNodesRef = useRef<AudioNode[]>([]);
+  const intervalRef = useRef<number | null>(null);
 
   const t = ui[language];
 
@@ -317,14 +355,8 @@ export default function Home() {
     return stories[day % stories.length];
   }, [stories]);
 
-  const featuredStories = useMemo(() => {
-    return stories.filter((story) => story.featured);
-  }, [stories]);
-
-  const editorPick = useMemo(() => {
-    if (featuredStories.length > 0) return featuredStories[0];
-    return null;
-  }, [featuredStories]);
+  const featuredStories = useMemo(() => stories.filter((story) => story.featured), [stories]);
+  const editorPick = useMemo(() => featuredStories[0] || null, [featuredStories]);
 
   const filteredStories = useMemo(() => {
     let result = [...stories];
@@ -385,11 +417,15 @@ export default function Home() {
     } else if (old) {
       await supabase.from("reactions").update({ reaction }).eq("story_id", storyId).eq("user_key", ownerKey);
     } else {
-      await supabase.from("reactions").insert({
+      const { error } = await supabase.from("reactions").insert({
         story_id: storyId,
         user_key: ownerKey,
         reaction,
       });
+
+      if (error) {
+        alert("You already reacted to this story.");
+      }
     }
 
     await loadEverything();
@@ -486,47 +522,104 @@ export default function Home() {
     setTimeout(() => setHighlightedId(null), 3500);
   }
 
+  function startBird(context: AudioContext, masterGain: GainNode) {
+    const start = context.currentTime + 0.05;
+    const bird = context.createOscillator();
+    const birdGain = context.createGain();
+
+    bird.type = "sine";
+    bird.frequency.setValueAtTime(1650 + Math.random() * 600, start);
+    bird.frequency.exponentialRampToValueAtTime(2300 + Math.random() * 500, start + 0.16);
+
+    birdGain.gain.setValueAtTime(0.0001, start);
+    birdGain.gain.linearRampToValueAtTime(0.018, start + 0.04);
+    birdGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.34);
+
+    bird.connect(birdGain);
+    birdGain.connect(masterGain);
+
+    bird.start(start);
+    bird.stop(start + 0.42);
+  }
+
   function toggleAmbient() {
     if (ambientOn) {
-      oscillatorsRef.current.forEach((osc) => osc.stop());
-      oscillatorsRef.current = [];
-
-      if (gainRef.current) {
-        gainRef.current.gain.value = 0;
+      if (intervalRef.current) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
 
+      if (audioRef.current) {
+        audioRef.current.close();
+        audioRef.current = null;
+      }
+
+      audioNodesRef.current = [];
       setAmbientOn(false);
       return;
     }
 
     const AudioContextClass =
-      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
     const context = new AudioContextClass();
-    const gain = context.createGain();
+    const masterGain = context.createGain();
+    masterGain.gain.value = 0.035;
+    masterGain.connect(context.destination);
 
-    gain.gain.value = 0.012;
-    gain.connect(context.destination);
+    const bufferSize = context.sampleRate * 4;
+    const noiseBuffer = context.createBuffer(1, bufferSize, context.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
 
-    const notes = [174.61, 220, 261.63, 329.63];
+    let last = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      last = last * 0.992 + (Math.random() * 2 - 1) * 0.008;
+      data[i] = last * 0.45;
+    }
 
-    const oscillators = notes.map((frequency, index) => {
-      const osc = context.createOscillator();
-      const noteGain = context.createGain();
+    const wind = context.createBufferSource();
+    wind.buffer = noiseBuffer;
+    wind.loop = true;
 
-      osc.type = index % 2 === 0 ? "sine" : "triangle";
-      osc.frequency.value = frequency;
-      noteGain.gain.value = 0.12 / notes.length;
+    const windFilter = context.createBiquadFilter();
+    windFilter.type = "lowpass";
+    windFilter.frequency.value = 420;
 
-      osc.connect(noteGain);
-      noteGain.connect(gain);
-      osc.start();
+    const windGain = context.createGain();
+    windGain.gain.value = 0.32;
 
-      return osc;
+    wind.connect(windFilter);
+    windFilter.connect(windGain);
+    windGain.connect(masterGain);
+    wind.start();
+
+    const airTone = context.createOscillator();
+    const airGain = context.createGain();
+
+    airTone.type = "sine";
+    airTone.frequency.value = 92;
+    airGain.gain.value = 0.006;
+
+    airTone.connect(airGain);
+    airGain.connect(masterGain);
+    airTone.start();
+
+    const firstBirds = [3, 11, 22];
+    firstBirds.forEach((delay) => {
+      window.setTimeout(() => {
+        if (audioRef.current) startBird(context, masterGain);
+      }, delay * 1000);
     });
 
+    intervalRef.current = window.setInterval(() => {
+      if (audioRef.current && Math.random() > 0.35) {
+        startBird(context, masterGain);
+      }
+    }, 16000);
+
     audioRef.current = context;
-    gainRef.current = gain;
-    oscillatorsRef.current = oscillators;
+    audioNodesRef.current = [masterGain, windFilter, windGain, airGain];
     setAmbientOn(true);
   }
 
@@ -539,7 +632,7 @@ export default function Home() {
 
     return list.map((comment) => (
       <div key={comment.id} style={{ ...styles.comment, marginLeft: depth > 0 ? "22px" : 0 }}>
-        <b>@{comment.nickname}</b>
+        <b>{displayName(comment.nickname, comment.owner_key || `comment-${comment.id}`, language)}</b>
         <p>{comment.text}</p>
 
         <button onClick={() => setReplyingTo(comment.id)} style={styles.replyButton}>
@@ -572,7 +665,7 @@ export default function Home() {
     return (
       <div style={styles.previewCard} onClick={() => openStory(story)}>
         <div style={styles.cardTop}>
-          <p style={styles.meta}>@{story.nickname} · {story.createdAt}</p>
+          <p style={styles.meta}>{displayName(story.nickname, story.ownerKey || `story-${story.id}`, language)} · {story.createdAt}</p>
           <span style={styles.badge}>{story.category}</span>
         </div>
         <h3 style={styles.previewTitle}>{story.title}</h3>
@@ -652,7 +745,7 @@ export default function Home() {
       ))}
 
       <button onClick={toggleAmbient} style={styles.ambientButton}>
-        {ambientOn ? `🎵 ${t.ambientOn}` : `🎧 ${t.ambientOff}`}
+        {ambientOn ? `🌙 ${t.ambientOn}` : `🍃 ${t.ambientOff}`}
       </button>
 
       <section style={styles.hero}>
@@ -686,7 +779,7 @@ export default function Home() {
               <p style={styles.pickLabel}>★ {t.editorsPick}</p>
               <h2 style={styles.pickTitle}>{editorPick.title}</h2>
               <p style={styles.pickText}>{editorPick.text.slice(0, 210)}...</p>
-              <p style={styles.pickMeta}>@{editorPick.nickname} · {editorPick.category}</p>
+              <p style={styles.pickMeta}>{displayName(editorPick.nickname, editorPick.ownerKey || `story-${editorPick.id}`, language)} · {editorPick.category}</p>
             </div>
           )}
 
@@ -742,22 +835,13 @@ export default function Home() {
           </div>
 
           <div style={styles.sortBar}>
-            <button
-              onClick={() => setSortMode("new")}
-              style={{ ...styles.sortButton, background: sortMode === "new" ? "#7e22ce" : "#151515" }}
-            >
+            <button onClick={() => setSortMode("new")} style={{ ...styles.sortButton, background: sortMode === "new" ? "#7e22ce" : "#151515" }}>
               {t.new}
             </button>
-            <button
-              onClick={() => setSortMode("trending")}
-              style={{ ...styles.sortButton, background: sortMode === "trending" ? "#7e22ce" : "#151515" }}
-            >
+            <button onClick={() => setSortMode("trending")} style={{ ...styles.sortButton, background: sortMode === "trending" ? "#7e22ce" : "#151515" }}>
               🔥 {t.trending}
             </button>
-            <button
-              onClick={() => setSortMode("loved")}
-              style={{ ...styles.sortButton, background: sortMode === "loved" ? "#7e22ce" : "#151515" }}
-            >
+            <button onClick={() => setSortMode("loved")} style={{ ...styles.sortButton, background: sortMode === "loved" ? "#7e22ce" : "#151515" }}>
               ❤️ {t.loved}
             </button>
           </div>
@@ -779,7 +863,7 @@ export default function Home() {
               >
                 <div style={styles.cardTop} onClick={() => openStory(story)}>
                   <p style={styles.meta}>
-                    @{story.nickname} · {story.createdAt}
+                    {displayName(story.nickname, story.ownerKey || `story-${story.id}`, language)} · {story.createdAt}
                   </p>
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {story.featured && <span style={styles.featuredBadge}>★ Featured</span>}
@@ -867,7 +951,7 @@ export default function Home() {
               ×
             </button>
 
-            <p style={styles.meta}>@{openedStory.nickname} · {openedStory.createdAt}</p>
+            <p style={styles.meta}>{displayName(openedStory.nickname, openedStory.ownerKey || `story-${openedStory.id}`, language)} · {openedStory.createdAt}</p>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               {openedStory.featured && <span style={styles.featuredBadge}>★ Featured</span>}
               <span style={styles.badge}>{openedStory.category}</span>
