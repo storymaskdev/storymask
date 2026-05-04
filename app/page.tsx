@@ -84,6 +84,7 @@ const ui = {
     trending: "Trending",
     loved: "Most Loved",
     deleteMine: "Delete my story",
+    ownStory: "Your story",
     ambientOn: "Night ambience on",
     ambientOff: "Night ambience off",
   },
@@ -113,6 +114,7 @@ const ui = {
     trending: "Trending",
     loved: "Beliebt",
     deleteMine: "Meine Geschichte löschen",
+    ownStory: "Deine Geschichte",
     ambientOn: "Nachtklang an",
     ambientOff: "Nachtklang aus",
   },
@@ -142,6 +144,7 @@ const ui = {
     trending: "В тренде",
     loved: "Любимые",
     deleteMine: "Удалить мою историю",
+    ownStory: "Твоя история",
     ambientOn: "Ночь вкл",
     ambientOff: "Ночь выкл",
   },
@@ -171,6 +174,7 @@ const ui = {
     trending: "Tendance",
     loved: "Aimées",
     deleteMine: "Supprimer mon histoire",
+    ownStory: "Ton histoire",
     ambientOn: "Nuit on",
     ambientOff: "Nuit off",
   },
@@ -200,6 +204,7 @@ const ui = {
     trending: "Tendenza",
     loved: "Più amate",
     deleteMine: "Elimina la mia storia",
+    ownStory: "La tua storia",
     ambientOn: "Notte on",
     ambientOff: "Notte off",
   },
@@ -207,6 +212,17 @@ const ui = {
 
 function makeKey() {
   return crypto.randomUUID();
+}
+
+function getOwnerKeyNow() {
+  let key = localStorage.getItem("storymask_owner_key");
+
+  if (!key) {
+    key = makeKey();
+    localStorage.setItem("storymask_owner_key", key);
+  }
+
+  return key;
 }
 
 function hashString(value: string) {
@@ -233,9 +249,23 @@ function makeDisplayCode(seed: string | null | undefined, language: Language) {
   return result;
 }
 
-function displayName(name: string, seed: string | null | undefined, language: Language) {
-  const clean = name?.trim() || "anonymous";
-  return `@${clean} (${makeDisplayCode(seed || clean, language)})`;
+function UserLabel({
+  nickname,
+  seed,
+  language,
+}: {
+  nickname: string;
+  seed: string | null | undefined;
+  language: Language;
+}) {
+  const clean = nickname?.trim() || "anonymous";
+
+  return (
+    <span style={styles.userLabel}>
+      <span>@{clean}</span>
+      <span style={styles.userCode}>({makeDisplayCode(seed || clean, language)})</span>
+    </span>
+  );
 }
 
 export default function Home() {
@@ -268,12 +298,7 @@ export default function Home() {
   const t = ui[language];
 
   useEffect(() => {
-    let key = localStorage.getItem("storymask_owner_key");
-    if (!key) {
-      key = makeKey();
-      localStorage.setItem("storymask_owner_key", key);
-    }
-
+    const key = getOwnerKeyNow();
     setOwnerKey(key);
 
     const savedLang = localStorage.getItem("storymask_language") as Language | null;
@@ -287,6 +312,8 @@ export default function Home() {
   }, [language]);
 
   async function loadEverything(currentKey = ownerKey) {
+    const realKey = currentKey || getOwnerKeyNow();
+
     setLoading(true);
 
     const { data: storyData, error: storyError } = await supabase
@@ -316,7 +343,7 @@ export default function Home() {
 
       reactionMap[r.story_id][r.reaction] += 1;
 
-      if (r.user_key === currentKey) {
+      if (r.user_key === realKey) {
         myMap[r.story_id] = r.reaction;
       }
     });
@@ -347,6 +374,10 @@ export default function Home() {
 
   function total(story: Story) {
     return story.reactions.heart + story.reactions.laugh + story.reactions.fear + story.reactions.shock;
+  }
+
+  function commentCount(storyId: number) {
+    return (comments[storyId] || []).length;
   }
 
   const storyOfDay = useMemo(() => {
@@ -380,6 +411,9 @@ export default function Home() {
   }, [stories, activeCategory, search, sortMode]);
 
   async function publishStory() {
+    const realKey = ownerKey || getOwnerKeyNow();
+    setOwnerKey(realKey);
+
     if (!nickname.trim() || !title.trim() || !text.trim()) {
       alert("Fill everything.");
       return;
@@ -395,7 +429,7 @@ export default function Home() {
       category,
       title: title.trim().slice(0, 90),
       text: text.trim().slice(0, 2500),
-      owner_key: ownerKey,
+      owner_key: realKey,
       featured: false,
     });
 
@@ -406,20 +440,23 @@ export default function Home() {
 
     setTitle("");
     setText("");
-    await loadEverything();
+    await loadEverything(realKey);
   }
 
   async function react(storyId: number, reaction: Reaction) {
+    const realKey = ownerKey || getOwnerKeyNow();
+    setOwnerKey(realKey);
+
     const old = myReaction[storyId];
 
     if (old === reaction) {
-      await supabase.from("reactions").delete().eq("story_id", storyId).eq("user_key", ownerKey);
+      await supabase.from("reactions").delete().eq("story_id", storyId).eq("user_key", realKey);
     } else if (old) {
-      await supabase.from("reactions").update({ reaction }).eq("story_id", storyId).eq("user_key", ownerKey);
+      await supabase.from("reactions").update({ reaction }).eq("story_id", storyId).eq("user_key", realKey);
     } else {
       const { error } = await supabase.from("reactions").insert({
         story_id: storyId,
-        user_key: ownerKey,
+        user_key: realKey,
         reaction,
       });
 
@@ -428,10 +465,13 @@ export default function Home() {
       }
     }
 
-    await loadEverything();
+    await loadEverything(realKey);
   }
 
   async function addComment(storyId: number, parentId: number | null = null) {
+    const realKey = ownerKey || getOwnerKeyNow();
+    setOwnerKey(realKey);
+
     const value = parentId ? replyTexts[parentId]?.trim() : commentTexts[storyId]?.trim();
     if (!value) return;
 
@@ -440,7 +480,7 @@ export default function Home() {
       parent_id: parentId,
       nickname: nickname.trim() || "anonymous",
       text: value.slice(0, 600),
-      owner_key: ownerKey,
+      owner_key: realKey,
     });
 
     if (error) {
@@ -455,7 +495,7 @@ export default function Home() {
       setCommentTexts({ ...commentTexts, [storyId]: "" });
     }
 
-    await loadEverything();
+    await loadEverything(realKey);
   }
 
   async function reportStory(storyId: number) {
@@ -476,17 +516,23 @@ export default function Home() {
   }
 
   async function deleteMyStory(story: Story) {
-    if (story.ownerKey !== ownerKey) return;
+    const realKey = ownerKey || getOwnerKeyNow();
+
+    if (story.ownerKey !== realKey) {
+      alert("You can delete only stories posted from this browser.");
+      return;
+    }
+
     if (!confirm("Delete this story?")) return;
 
-    const { error } = await supabase.from("stories").delete().eq("id", story.id).eq("owner_key", ownerKey);
+    const { error } = await supabase.from("stories").delete().eq("id", story.id).eq("owner_key", realKey);
 
     if (error) {
       alert(error.message);
       return;
     }
 
-    await loadEverything();
+    await loadEverything(realKey);
   }
 
   async function shareStory(story: Story) {
@@ -632,7 +678,13 @@ export default function Home() {
 
     return list.map((comment) => (
       <div key={comment.id} style={{ ...styles.comment, marginLeft: depth > 0 ? "22px" : 0 }}>
-        <b>{displayName(comment.nickname, comment.owner_key || `comment-${comment.id}`, language)}</b>
+        <b>
+          <UserLabel
+            nickname={comment.nickname}
+            seed={comment.owner_key || `comment-${comment.id}`}
+            language={language}
+          />
+        </b>
         <p>{comment.text}</p>
 
         <button onClick={() => setReplyingTo(comment.id)} style={styles.replyButton}>
@@ -665,7 +717,11 @@ export default function Home() {
     return (
       <div style={styles.previewCard} onClick={() => openStory(story)}>
         <div style={styles.cardTop}>
-          <p style={styles.meta}>{displayName(story.nickname, story.ownerKey || `story-${story.id}`, language)} · {story.createdAt}</p>
+          <p style={styles.meta}>
+            <UserLabel nickname={story.nickname} seed={story.ownerKey || `story-${story.id}`} language={language} />
+            {" · "}
+            {story.createdAt}
+          </p>
           <span style={styles.badge}>{story.category}</span>
         </div>
         <h3 style={styles.previewTitle}>{story.title}</h3>
@@ -727,6 +783,10 @@ export default function Home() {
           .pick-grid {
             grid-template-columns: 1fr !important;
           }
+
+          .comment-form-mobile {
+            flex-direction: column !important;
+          }
         }
       `}</style>
 
@@ -779,7 +839,11 @@ export default function Home() {
               <p style={styles.pickLabel}>★ {t.editorsPick}</p>
               <h2 style={styles.pickTitle}>{editorPick.title}</h2>
               <p style={styles.pickText}>{editorPick.text.slice(0, 210)}...</p>
-              <p style={styles.pickMeta}>{displayName(editorPick.nickname, editorPick.ownerKey || `story-${editorPick.id}`, language)} · {editorPick.category}</p>
+              <p style={styles.pickMeta}>
+                <UserLabel nickname={editorPick.nickname} seed={editorPick.ownerKey || `story-${editorPick.id}`} language={language} />
+                {" · "}
+                {editorPick.category}
+              </p>
             </div>
           )}
 
@@ -863,9 +927,13 @@ export default function Home() {
               >
                 <div style={styles.cardTop} onClick={() => openStory(story)}>
                   <p style={styles.meta}>
-                    {displayName(story.nickname, story.ownerKey || `story-${story.id}`, language)} · {story.createdAt}
+                    <UserLabel nickname={story.nickname} seed={story.ownerKey || `story-${story.id}`} language={language} />
+                    {" · "}
+                    {story.createdAt}
                   </p>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    {story.ownerKey === ownerKey && <span style={styles.ownBadge}>✓ {t.ownStory}</span>}
                     {story.featured && <span style={styles.featuredBadge}>★ Featured</span>}
                     <span style={styles.badge}>{story.category}</span>
                   </div>
@@ -898,11 +966,13 @@ export default function Home() {
                 </div>
 
                 <div style={styles.commentsBox}>
-                  <p style={styles.commentsTitle}>💬 {t.comments}</p>
+                  <p style={styles.commentsTitle}>
+                    💬 {t.comments} <span style={styles.commentCounter}>({commentCount(story.id)})</span>
+                  </p>
 
-                  {renderComments(story).slice(0, 3)}
+                  {renderComments(story)}
 
-                  <div style={styles.commentForm}>
+                  <div className="comment-form-mobile" style={styles.commentForm}>
                     <input
                       placeholder={t.comment}
                       value={commentTexts[story.id] || ""}
@@ -951,8 +1021,14 @@ export default function Home() {
               ×
             </button>
 
-            <p style={styles.meta}>{displayName(openedStory.nickname, openedStory.ownerKey || `story-${openedStory.id}`, language)} · {openedStory.createdAt}</p>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <p style={styles.meta}>
+              <UserLabel nickname={openedStory.nickname} seed={openedStory.ownerKey || `story-${openedStory.id}`} language={language} />
+              {" · "}
+              {openedStory.createdAt}
+            </p>
+
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+              {openedStory.ownerKey === ownerKey && <span style={styles.ownBadge}>✓ {t.ownStory}</span>}
               {openedStory.featured && <span style={styles.featuredBadge}>★ Featured</span>}
               <span style={styles.badge}>{openedStory.category}</span>
             </div>
@@ -967,12 +1043,26 @@ export default function Home() {
               <button onClick={() => react(openedStory.id, "shock")} style={reactionStyle(myReaction[openedStory.id] === "shock")}>🤯 {openedStory.reactions.shock}</button>
             </div>
 
+            <div style={styles.cardActions}>
+              <button onClick={() => shareStory(openedStory)} style={styles.actionButton}>↗ {t.share}</button>
+              <button onClick={() => reportStory(openedStory.id)} style={styles.actionButton}>
+                {reported[openedStory.id] ? `✓ ${t.reported}` : `⚐ ${t.report}`}
+              </button>
+              {openedStory.ownerKey === ownerKey && (
+                <button onClick={() => deleteMyStory(openedStory)} style={styles.deleteButton}>
+                  {t.deleteMine}
+                </button>
+              )}
+            </div>
+
             <div style={styles.commentsBox}>
-              <p style={styles.commentsTitle}>💬 {t.comments}</p>
+              <p style={styles.commentsTitle}>
+                💬 {t.comments} <span style={styles.commentCounter}>({commentCount(openedStory.id)})</span>
+              </p>
 
               {renderComments(openedStory)}
 
-              <div style={styles.commentForm}>
+              <div className="comment-form-mobile" style={styles.commentForm}>
                 <input
                   placeholder={t.comment}
                   value={commentTexts[openedStory.id] || ""}
@@ -1204,9 +1294,29 @@ const styles: Record<string, CSSProperties> = {
   },
   cardTop: { display: "flex", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" },
   meta: { color: "#8b8b8b", fontSize: "14px" },
+  userLabel: {
+    display: "inline-flex",
+    gap: "6px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  userCode: {
+    color: "#c084fc",
+    fontSize: "13px",
+    letterSpacing: "0.4px",
+  },
   badge: {
     background: "#18181b",
     color: "#d4d4d8",
+    borderRadius: "999px",
+    padding: "7px 12px",
+    fontSize: "13px",
+    display: "inline-block",
+  },
+  ownBadge: {
+    background: "rgba(34,197,94,.16)",
+    color: "#bbf7d0",
+    border: "1px solid rgba(34,197,94,.35)",
     borderRadius: "999px",
     padding: "7px 12px",
     fontSize: "13px",
@@ -1247,6 +1357,7 @@ const styles: Record<string, CSSProperties> = {
     borderTop: "1px solid #27272a",
   },
   commentsTitle: { color: "#c4b5fd", fontWeight: "bold" },
+  commentCounter: { color: "#a1a1aa" },
   comment: {
     background: "#0f0f0f",
     border: "1px solid #27272a",
@@ -1264,10 +1375,11 @@ const styles: Record<string, CSSProperties> = {
     padding: 0,
     fontWeight: "bold",
   },
-  replyForm: { display: "flex", gap: "8px", marginTop: "10px" },
+  replyForm: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" },
   commentForm: { display: "flex", gap: "10px", marginTop: "12px" },
   commentInput: {
     flex: 1,
+    minWidth: "180px",
     padding: "12px",
     borderRadius: "12px",
     border: "1px solid #333",
