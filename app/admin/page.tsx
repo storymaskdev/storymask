@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabase } from "../lib/supabase";
 
 const ADMIN_PASSWORD = "Perhakstorymask746875";
@@ -18,6 +18,7 @@ type Story = {
 type Comment = {
   id: number;
   story_id: number;
+  parent_id: number | null;
   nickname: string;
   text: string;
   created_at: string;
@@ -59,20 +60,24 @@ export default function AdminPage() {
   async function loadAdminData() {
     setLoading(true);
 
-    const { data: storyData } = await supabase
+    const { data: storyData, error: storyError } = await supabase
       .from("stories")
       .select("*")
       .order("created_at", { ascending: false });
 
-    const { data: commentData } = await supabase
+    const { data: commentData, error: commentError } = await supabase
       .from("comments")
       .select("*")
       .order("created_at", { ascending: false });
 
-    const { data: reportData } = await supabase
+    const { data: reportData, error: reportError } = await supabase
       .from("reports")
       .select("*")
       .order("created_at", { ascending: false });
+
+    if (storyError) alert(storyError.message);
+    if (commentError) alert(commentError.message);
+    if (reportError) alert(reportError.message);
 
     setStories((storyData as Story[]) || []);
     setComments((commentData as Comment[]) || []);
@@ -80,11 +85,16 @@ export default function AdminPage() {
     setLoading(false);
   }
 
+  const storyById = useMemo(() => {
+    const map: Record<number, Story> = {};
+    stories.forEach((story) => {
+      map[story.id] = story;
+    });
+    return map;
+  }, [stories]);
+
   async function toggleFeatured(id: number, value: boolean) {
-    const { error } = await supabase
-      .from("stories")
-      .update({ featured: value })
-      .eq("id", id);
+    const { error } = await supabase.from("stories").update({ featured: value }).eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -121,10 +131,20 @@ export default function AdminPage() {
   }
 
   async function closeReport(id: number) {
-    const { error } = await supabase
-      .from("reports")
-      .update({ status: "closed" })
-      .eq("id", id);
+    const { error } = await supabase.from("reports").update({ status: "closed" }).eq("id", id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadAdminData();
+  }
+
+  async function deleteReport(id: number) {
+    if (!confirm("Delete this report?")) return;
+
+    const { error } = await supabase.from("reports").delete().eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -163,7 +183,7 @@ export default function AdminPage() {
         <div>
           <p style={styles.logo}>STORYMASK ADMIN</p>
           <h1 style={styles.title}>Control Room</h1>
-          <p style={styles.sub}>Reports, stories and comments moderation.</p>
+          <p style={styles.sub}>Reports, stories, comments and replies moderation.</p>
         </div>
 
         <button onClick={loadAdminData} style={styles.button}>
@@ -174,25 +194,10 @@ export default function AdminPage() {
       {loading && <div style={styles.notice}>Loading...</div>}
 
       <section style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <p>Stories</p>
-          <b>{stories.length}</b>
-        </div>
-
-        <div style={styles.statCard}>
-          <p>Comments</p>
-          <b>{comments.length}</b>
-        </div>
-
-        <div style={styles.statCard}>
-          <p>Open reports</p>
-          <b>{reports.filter((r) => r.status === "open").length}</b>
-        </div>
-
-        <div style={styles.statCard}>
-          <p>Featured</p>
-          <b>{stories.filter((s) => s.featured).length}</b>
-        </div>
+        <div style={styles.statCard}><p>Stories</p><b>{stories.length}</b></div>
+        <div style={styles.statCard}><p>Comments</p><b>{comments.length}</b></div>
+        <div style={styles.statCard}><p>Open reports</p><b>{reports.filter((r) => r.status === "open").length}</b></div>
+        <div style={styles.statCard}><p>Featured</p><b>{stories.filter((s) => s.featured).length}</b></div>
       </section>
 
       <section style={styles.grid}>
@@ -201,33 +206,51 @@ export default function AdminPage() {
 
           {reports.length === 0 && <p style={styles.muted}>No reports yet.</p>}
 
-          {reports.map((report) => (
-            <div key={report.id} style={styles.item}>
-              <p style={styles.meta}>Story ID: {report.story_id}</p>
-              <p>{report.reason}</p>
-              <p style={styles.meta}>Status: {report.status}</p>
+          {reports.map((report) => {
+            const story = storyById[report.story_id];
 
-              <button onClick={() => closeReport(report.id)} style={styles.smallButton}>
-                Mark closed
-              </button>
-            </div>
-          ))}
+            return (
+              <div key={report.id} style={styles.item}>
+                <p style={styles.meta}>Report #{report.id} · Story ID: {report.story_id}</p>
+                <p>Status: <b>{report.status}</b></p>
+                <p>{report.reason}</p>
+
+                {story ? (
+                  <div style={styles.reportStoryBox}>
+                    <p style={styles.meta}>Reported story:</p>
+                    <h3>{story.title}</h3>
+                    <p style={styles.storyText}>{story.text}</p>
+                    <p style={styles.meta}>@{story.nickname} · {story.category}</p>
+                  </div>
+                ) : (
+                  <p style={styles.muted}>Story was deleted or not found.</p>
+                )}
+
+                <div style={styles.actionRow}>
+                  <button onClick={() => closeReport(report.id)} style={styles.smallButton}>Mark closed</button>
+                  <button onClick={() => deleteReport(report.id)} style={styles.smallButton}>Delete report</button>
+                  {story && <button onClick={() => deleteStory(story.id)} style={styles.deleteButton}>Delete story</button>}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div style={styles.panel}>
-          <h2>💬 Comments</h2>
+          <h2>💬 Comments / Replies</h2>
 
           {comments.length === 0 && <p style={styles.muted}>No comments yet.</p>}
 
           {comments.map((comment) => (
             <div key={comment.id} style={styles.item}>
-              <p style={styles.meta}>Story ID: {comment.story_id}</p>
+              <p style={styles.meta}>
+                Story ID: {comment.story_id}
+                {comment.parent_id ? ` · Reply to comment #${comment.parent_id}` : ""}
+              </p>
               <b>@{comment.nickname}</b>
               <p>{comment.text}</p>
 
-              <button onClick={() => deleteComment(comment.id)} style={styles.deleteButton}>
-                Delete comment
-              </button>
+              <button onClick={() => deleteComment(comment.id)} style={styles.deleteButton}>Delete comment</button>
             </div>
           ))}
         </div>
@@ -241,26 +264,16 @@ export default function AdminPage() {
         {stories.map((story) => (
           <div key={story.id} style={styles.storyItem}>
             <div>
-              <p style={styles.meta}>
-                #{story.id} · @{story.nickname} · {story.category}
-                {story.featured ? " · ★ Featured" : ""}
-              </p>
-
+              <p style={styles.meta}>#{story.id} · @{story.nickname} · {story.category}{story.featured ? " · ★ Featured" : ""}</p>
               <h3>{story.title}</h3>
               <p style={styles.storyText}>{story.text}</p>
             </div>
 
             <div style={styles.actionRow}>
-              <button
-                onClick={() => toggleFeatured(story.id, !story.featured)}
-                style={styles.smallButton}
-              >
+              <button onClick={() => toggleFeatured(story.id, !story.featured)} style={styles.smallButton}>
                 {story.featured ? "★ Unpin" : "☆ Pin"}
               </button>
-
-              <button onClick={() => deleteStory(story.id)} style={styles.deleteButton}>
-                Delete story
-              </button>
+              <button onClick={() => deleteStory(story.id)} style={styles.deleteButton}>Delete story</button>
             </div>
           </div>
         ))}
@@ -270,154 +283,26 @@ export default function AdminPage() {
 }
 
 const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    background:
-      "radial-gradient(circle at top left, #3b0764, transparent 35%), radial-gradient(circle at bottom right, #172554, transparent 35%), #030303",
-    color: "white",
-    padding: "35px",
-    fontFamily: "Arial, sans-serif",
-  },
-  loginBox: {
-    maxWidth: "520px",
-    margin: "120px auto",
-    padding: "35px",
-    borderRadius: "30px",
-    border: "1px solid #581c87",
-    background: "rgba(0,0,0,.72)",
-    boxShadow: "0 0 60px rgba(168,85,247,.25)",
-  },
-  header: {
-    maxWidth: "1200px",
-    margin: "0 auto 25px",
-    padding: "30px",
-    borderRadius: "30px",
-    border: "1px solid #27272a",
-    background: "rgba(0,0,0,.65)",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "20px",
-    flexWrap: "wrap",
-  },
-  logo: {
-    color: "#c084fc",
-    letterSpacing: "5px",
-    fontSize: "13px",
-  },
-  title: {
-    fontSize: "52px",
-    margin: "10px 0",
-    fontWeight: 900,
-  },
-  sub: {
-    color: "#aaa",
-  },
-  input: {
-    width: "100%",
-    padding: "15px",
-    borderRadius: "14px",
-    border: "1px solid #333",
-    background: "#080808",
-    color: "white",
-    fontSize: "16px",
-    marginBottom: "14px",
-  },
-  button: {
-    background: "#7e22ce",
-    color: "white",
-    border: "none",
-    borderRadius: "14px",
-    padding: "14px 18px",
-    fontWeight: "bold",
-    cursor: "pointer",
-  },
-  smallButton: {
-    background: "#27272a",
-    color: "white",
-    border: "none",
-    borderRadius: "12px",
-    padding: "10px 12px",
-    cursor: "pointer",
-    height: "fit-content",
-  },
-  deleteButton: {
-    background: "transparent",
-    color: "#fca5a5",
-    border: "1px solid #7f1d1d",
-    borderRadius: "12px",
-    padding: "10px 12px",
-    cursor: "pointer",
-    height: "fit-content",
-  },
-  notice: {
-    maxWidth: "1200px",
-    margin: "0 auto 20px",
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#111",
-    color: "#aaa",
-  },
-  statsGrid: {
-    maxWidth: "1200px",
-    margin: "0 auto 25px",
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: "15px",
-  },
-  statCard: {
-    padding: "22px",
-    borderRadius: "22px",
-    background: "rgba(10,10,10,.82)",
-    border: "1px solid #27272a",
-  },
-  grid: {
-    maxWidth: "1200px",
-    margin: "0 auto 25px",
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "25px",
-  },
-  panel: {
-    maxWidth: "1200px",
-    margin: "0 auto 25px",
-    padding: "25px",
-    borderRadius: "26px",
-    background: "rgba(10,10,10,.86)",
-    border: "1px solid #27272a",
-  },
-  item: {
-    padding: "18px",
-    borderRadius: "18px",
-    background: "#0f0f0f",
-    border: "1px solid #27272a",
-    marginBottom: "14px",
-  },
-  storyItem: {
-    padding: "20px",
-    borderRadius: "20px",
-    background: "#0f0f0f",
-    border: "1px solid #27272a",
-    marginBottom: "14px",
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "18px",
-  },
-  actionRow: {
-    display: "flex",
-    gap: "10px",
-    alignItems: "flex-start",
-    flexShrink: 0,
-  },
-  meta: {
-    color: "#8b8b8b",
-    fontSize: "14px",
-  },
-  storyText: {
-    color: "#d4d4d8",
-    lineHeight: "1.6",
-    whiteSpace: "pre-wrap",
-  },
-  muted: {
-    color: "#888",
-  },
+  page: { minHeight: "100vh", background: "radial-gradient(circle at top left, #3b0764, transparent 35%), radial-gradient(circle at bottom right, #172554, transparent 35%), #030303", color: "white", padding: "35px", fontFamily: "Arial, sans-serif" },
+  loginBox: { maxWidth: "520px", margin: "120px auto", padding: "35px", borderRadius: "30px", border: "1px solid #581c87", background: "rgba(0,0,0,.72)", boxShadow: "0 0 60px rgba(168,85,247,.25)" },
+  header: { maxWidth: "1200px", margin: "0 auto 25px", padding: "30px", borderRadius: "30px", border: "1px solid #27272a", background: "rgba(0,0,0,.65)", display: "flex", justifyContent: "space-between", gap: "20px", flexWrap: "wrap" },
+  logo: { color: "#c084fc", letterSpacing: "5px", fontSize: "13px" },
+  title: { fontSize: "52px", margin: "10px 0", fontWeight: 900 },
+  sub: { color: "#aaa" },
+  input: { width: "100%", padding: "15px", borderRadius: "14px", border: "1px solid #333", background: "#080808", color: "white", fontSize: "16px", marginBottom: "14px" },
+  button: { background: "#7e22ce", color: "white", border: "none", borderRadius: "14px", padding: "14px 18px", fontWeight: "bold", cursor: "pointer" },
+  smallButton: { background: "#27272a", color: "white", border: "none", borderRadius: "12px", padding: "10px 12px", cursor: "pointer", height: "fit-content" },
+  deleteButton: { background: "transparent", color: "#fca5a5", border: "1px solid #7f1d1d", borderRadius: "12px", padding: "10px 12px", cursor: "pointer", height: "fit-content" },
+  notice: { maxWidth: "1200px", margin: "0 auto 20px", padding: "18px", borderRadius: "18px", background: "#111", color: "#aaa" },
+  statsGrid: { maxWidth: "1200px", margin: "0 auto 25px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "15px" },
+  statCard: { padding: "22px", borderRadius: "22px", background: "rgba(10,10,10,.82)", border: "1px solid #27272a" },
+  grid: { maxWidth: "1200px", margin: "0 auto 25px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "25px" },
+  panel: { maxWidth: "1200px", margin: "0 auto 25px", padding: "25px", borderRadius: "26px", background: "rgba(10,10,10,.86)", border: "1px solid #27272a" },
+  item: { padding: "18px", borderRadius: "18px", background: "#0f0f0f", border: "1px solid #27272a", marginBottom: "14px" },
+  reportStoryBox: { padding: "14px", borderRadius: "14px", background: "#080808", border: "1px solid #27272a", marginTop: "12px" },
+  storyItem: { padding: "20px", borderRadius: "20px", background: "#0f0f0f", border: "1px solid #27272a", marginBottom: "14px", display: "flex", justifyContent: "space-between", gap: "18px" },
+  actionRow: { display: "flex", gap: "10px", alignItems: "flex-start", flexWrap: "wrap" },
+  meta: { color: "#8b8b8b", fontSize: "14px" },
+  storyText: { color: "#d4d4d8", lineHeight: "1.6", whiteSpace: "pre-wrap" },
+  muted: { color: "#888" },
 };

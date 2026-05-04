@@ -23,6 +23,7 @@ type Story = {
 type Comment = {
   id: number;
   story_id: number;
+  parent_id: number | null;
   nickname: string;
   text: string;
   created_at: string;
@@ -59,6 +60,8 @@ const ui = {
     empty: "No stories here yet. Be the first.",
     search: "Search stories...",
     comment: "Write a comment...",
+    reply: "Reply",
+    cancel: "Cancel",
     send: "Send",
     comments: "Comments",
     report: "Report",
@@ -86,6 +89,8 @@ const ui = {
     empty: "Noch keine Geschichten.",
     search: "Geschichten suchen...",
     comment: "Kommentar schreiben...",
+    reply: "Antworten",
+    cancel: "Abbrechen",
     send: "Senden",
     comments: "Kommentare",
     report: "Melden",
@@ -113,6 +118,8 @@ const ui = {
     empty: "Тут пока нет историй. Будь первым.",
     search: "Поиск историй...",
     comment: "Написать комментарий...",
+    reply: "Ответить",
+    cancel: "Отмена",
     send: "Отправить",
     comments: "Комментарии",
     report: "Жалоба",
@@ -140,6 +147,8 @@ const ui = {
     empty: "Aucune histoire ici.",
     search: "Chercher...",
     comment: "Écrire un commentaire...",
+    reply: "Répondre",
+    cancel: "Annuler",
     send: "Envoyer",
     comments: "Commentaires",
     report: "Signaler",
@@ -167,6 +176,8 @@ const ui = {
     empty: "Ancora nessuna storia.",
     search: "Cerca storie...",
     comment: "Scrivi un commento...",
+    reply: "Rispondi",
+    cancel: "Annulla",
     send: "Invia",
     comments: "Commenti",
     report: "Segnala",
@@ -193,6 +204,8 @@ export default function Home() {
   const [stories, setStories] = useState<Story[]>([]);
   const [comments, setComments] = useState<Record<number, Comment[]>>({});
   const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
+  const [replyTexts, setReplyTexts] = useState<Record<number, string>>({});
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [myReaction, setMyReaction] = useState<Record<number, Reaction>>({});
   const [reported, setReported] = useState<Record<number, boolean>>({});
   const [nickname, setNickname] = useState("");
@@ -382,12 +395,13 @@ export default function Home() {
     await loadEverything();
   }
 
-  async function addComment(storyId: number) {
-    const value = commentTexts[storyId]?.trim();
+  async function addComment(storyId: number, parentId: number | null = null) {
+    const value = parentId ? replyTexts[parentId]?.trim() : commentTexts[storyId]?.trim();
     if (!value) return;
 
     const { error } = await supabase.from("comments").insert({
       story_id: storyId,
+      parent_id: parentId,
       nickname: nickname.trim() || "anonymous",
       text: value.slice(0, 600),
       owner_key: ownerKey,
@@ -398,17 +412,29 @@ export default function Home() {
       return;
     }
 
-    setCommentTexts({ ...commentTexts, [storyId]: "" });
+    if (parentId) {
+      setReplyTexts({ ...replyTexts, [parentId]: "" });
+      setReplyingTo(null);
+    } else {
+      setCommentTexts({ ...commentTexts, [storyId]: "" });
+    }
+
     await loadEverything();
   }
 
   async function reportStory(storyId: number) {
     if (reported[storyId]) return;
 
-    await supabase.from("reports").insert({
+    const { error } = await supabase.from("reports").insert({
       story_id: storyId,
       reason: "User reported this story",
+      status: "open",
     });
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
 
     setReported({ ...reported, [storyId]: true });
   }
@@ -478,10 +504,10 @@ export default function Home() {
     const context = new AudioContextClass();
     const gain = context.createGain();
 
-    gain.gain.value = 0.018;
+    gain.gain.value = 0.012;
     gain.connect(context.destination);
 
-    const notes = [196, 246.94, 293.66, 392];
+    const notes = [174.61, 220, 261.63, 329.63];
 
     const oscillators = notes.map((frequency, index) => {
       const osc = context.createOscillator();
@@ -489,7 +515,7 @@ export default function Home() {
 
       osc.type = index % 2 === 0 ? "sine" : "triangle";
       osc.frequency.value = frequency;
-      noteGain.gain.value = 0.18 / notes.length;
+      noteGain.gain.value = 0.12 / notes.length;
 
       osc.connect(noteGain);
       noteGain.connect(gain);
@@ -506,6 +532,40 @@ export default function Home() {
 
   function openStory(story: Story) {
     setOpenedStory(story);
+  }
+
+  function renderComments(story: Story, parentId: number | null = null, depth = 0) {
+    const list = (comments[story.id] || []).filter((comment) => comment.parent_id === parentId);
+
+    return list.map((comment) => (
+      <div key={comment.id} style={{ ...styles.comment, marginLeft: depth > 0 ? "22px" : 0 }}>
+        <b>@{comment.nickname}</b>
+        <p>{comment.text}</p>
+
+        <button onClick={() => setReplyingTo(comment.id)} style={styles.replyButton}>
+          {t.reply}
+        </button>
+
+        {replyingTo === comment.id && (
+          <div style={styles.replyForm}>
+            <input
+              placeholder={t.comment}
+              value={replyTexts[comment.id] || ""}
+              onChange={(e) => setReplyTexts({ ...replyTexts, [comment.id]: e.target.value })}
+              style={styles.commentInput}
+            />
+            <button onClick={() => addComment(story.id, comment.id)} style={styles.commentButton}>
+              {t.send}
+            </button>
+            <button onClick={() => setReplyingTo(null)} style={styles.cancelButton}>
+              {t.cancel}
+            </button>
+          </div>
+        )}
+
+        {renderComments(story, comment.id, depth + 1)}
+      </div>
+    ));
   }
 
   function StoryPreview({ story }: { story: Story }) {
@@ -756,12 +816,7 @@ export default function Home() {
                 <div style={styles.commentsBox}>
                   <p style={styles.commentsTitle}>💬 {t.comments}</p>
 
-                  {(comments[story.id] || []).slice(0, 3).map((comment) => (
-                    <div key={comment.id} style={styles.comment}>
-                      <b>@{comment.nickname}</b>
-                      <p>{comment.text}</p>
-                    </div>
-                  ))}
+                  {renderComments(story).slice(0, 3)}
 
                   <div style={styles.commentForm}>
                     <input
@@ -831,12 +886,7 @@ export default function Home() {
             <div style={styles.commentsBox}>
               <p style={styles.commentsTitle}>💬 {t.comments}</p>
 
-              {(comments[openedStory.id] || []).map((comment) => (
-                <div key={comment.id} style={styles.comment}>
-                  <b>@{comment.nickname}</b>
-                  <p>{comment.text}</p>
-                </div>
-              ))}
+              {renderComments(openedStory)}
 
               <div style={styles.commentForm}>
                 <input
@@ -1121,6 +1171,16 @@ const styles: Record<string, CSSProperties> = {
     marginTop: "10px",
     color: "#d4d4d8",
   },
+  replyButton: {
+    marginTop: "6px",
+    background: "transparent",
+    color: "#c4b5fd",
+    border: "none",
+    cursor: "pointer",
+    padding: 0,
+    fontWeight: "bold",
+  },
+  replyForm: { display: "flex", gap: "8px", marginTop: "10px" },
   commentForm: { display: "flex", gap: "10px", marginTop: "12px" },
   commentInput: {
     flex: 1,
@@ -1137,6 +1197,14 @@ const styles: Record<string, CSSProperties> = {
     background: "#7e22ce",
     color: "white",
     fontWeight: "bold",
+    cursor: "pointer",
+  },
+  cancelButton: {
+    padding: "12px 14px",
+    borderRadius: "12px",
+    border: "1px solid #333",
+    background: "transparent",
+    color: "#aaa",
     cursor: "pointer",
   },
   smallAd: {
