@@ -47,6 +47,18 @@ type DbReaction = {
   reaction: Reaction;
 };
 
+type ProfileTarget = {
+  nickname: string;
+  seed: string;
+};
+
+type NotificationItem = {
+  id: string;
+  title: string;
+  text: string;
+  storyId: number;
+};
+
 const categories: Category[] = ["All", "Creepy", "Funny", "Scary", "Sad", "Love", "Secret"];
 
 const alphabets: Record<Language, string> = {
@@ -62,6 +74,7 @@ const ui = {
     logo: "ANONYMOUS STORIES",
     subtitle: "Share the story you never told anyone.",
     random: "Find a random story",
+    confessionDay: "Confession of the day",
     write: "Write your story",
     formText: "No real name. No profile picture. Just your words.",
     publish: "Publish anonymously",
@@ -87,11 +100,18 @@ const ui = {
     ownStory: "Your story",
     ambientOn: "Night ambience on",
     ambientOff: "Night ambience off",
+    notifications: "Notifications",
+    noNotifications: "No new notifications.",
+    profile: "Anonymous profile",
+    profileStories: "Stories",
+    profileComments: "Comments",
+    close: "Close",
   },
   de: {
     logo: "ANONYME GESCHICHTEN",
     subtitle: "Teile die Geschichte, die du nie erzählt hast.",
     random: "Zufällige Geschichte",
+    confessionDay: "Geständnis des Tages",
     write: "Deine Geschichte",
     formText: "Kein echter Name. Kein Profilbild. Nur deine Worte.",
     publish: "Anonym veröffentlichen",
@@ -117,11 +137,18 @@ const ui = {
     ownStory: "Deine Geschichte",
     ambientOn: "Nachtklang an",
     ambientOff: "Nachtklang aus",
+    notifications: "Benachrichtigungen",
+    noNotifications: "Keine neuen Benachrichtigungen.",
+    profile: "Anonymes Profil",
+    profileStories: "Geschichten",
+    profileComments: "Kommentare",
+    close: "Schließen",
   },
   ru: {
     logo: "АНОНИМНЫЕ ИСТОРИИ",
     subtitle: "Расскажи историю, которую ты никому не говорил.",
     random: "Найти случайную историю",
+    confessionDay: "Исповедь дня",
     write: "Написать историю",
     formText: "Без имени. Без фото. Только твои слова.",
     publish: "Опубликовать анонимно",
@@ -147,11 +174,18 @@ const ui = {
     ownStory: "Твоя история",
     ambientOn: "Ночь вкл",
     ambientOff: "Ночь выкл",
+    notifications: "Уведомления",
+    noNotifications: "Новых уведомлений нет.",
+    profile: "Анонимный профиль",
+    profileStories: "Истории",
+    profileComments: "Комментарии",
+    close: "Закрыть",
   },
   fr: {
     logo: "HISTOIRES ANONYMES",
     subtitle: "Partage l’histoire que tu n’as jamais racontée.",
     random: "Histoire aléatoire",
+    confessionDay: "Confession du jour",
     write: "Écris ton histoire",
     formText: "Pas de vrai nom. Pas de photo. Juste tes mots.",
     publish: "Publier anonymement",
@@ -177,11 +211,18 @@ const ui = {
     ownStory: "Ton histoire",
     ambientOn: "Nuit on",
     ambientOff: "Nuit off",
+    notifications: "Notifications",
+    noNotifications: "Aucune nouvelle notification.",
+    profile: "Profil anonyme",
+    profileStories: "Histoires",
+    profileComments: "Commentaires",
+    close: "Fermer",
   },
   it: {
     logo: "STORIE ANONIME",
     subtitle: "Condividi la storia che non hai mai raccontato.",
     random: "Storia casuale",
+    confessionDay: "Confessione del giorno",
     write: "Scrivi la tua storia",
     formText: "Nessun nome reale. Nessuna foto. Solo parole.",
     publish: "Pubblica anonimamente",
@@ -207,22 +248,17 @@ const ui = {
     ownStory: "La tua storia",
     ambientOn: "Notte on",
     ambientOff: "Notte off",
+    notifications: "Notifiche",
+    noNotifications: "Nessuna nuova notifica.",
+    profile: "Profilo anonimo",
+    profileStories: "Storie",
+    profileComments: "Commenti",
+    close: "Chiudi",
   },
 };
 
 function makeKey() {
   return crypto.randomUUID();
-}
-
-function getOwnerKeyNow() {
-  let key = localStorage.getItem("storymask_owner_key");
-
-  if (!key) {
-    key = makeKey();
-    localStorage.setItem("storymask_owner_key", key);
-  }
-
-  return key;
 }
 
 function hashString(value: string) {
@@ -234,6 +270,32 @@ function hashString(value: string) {
   }
 
   return hash >>> 0;
+}
+
+function getDeviceHint() {
+  if (typeof window === "undefined") return "server";
+
+  const raw = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width,
+    screen.height,
+    screen.colorDepth,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  ].join("|");
+
+  return `device-${hashString(raw).toString(36)}`;
+}
+
+function getOwnerKeyNow() {
+  let key = localStorage.getItem("storymask_owner_key");
+
+  if (!key) {
+    key = `${getDeviceHint()}-${makeKey()}`;
+    localStorage.setItem("storymask_owner_key", key);
+  }
+
+  return key;
 }
 
 function makeDisplayCode(seed: string | null | undefined, language: Language) {
@@ -253,15 +315,27 @@ function UserLabel({
   nickname,
   seed,
   language,
+  onClick,
 }: {
   nickname: string;
   seed: string | null | undefined;
   language: Language;
+  onClick?: () => void;
 }) {
   const clean = nickname?.trim() || "anonymous";
 
   return (
-    <span style={styles.userLabel}>
+    <span
+      style={{
+        ...styles.userLabel,
+        cursor: onClick ? "pointer" : "default",
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick?.();
+      }}
+      title={onClick ? "Open anonymous profile" : ""}
+    >
       <span>@{clean}</span>
       <span style={styles.userCode}>({makeDisplayCode(seed || clean, language)})</span>
     </span>
@@ -288,6 +362,8 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [openedStory, setOpenedStory] = useState<Story | null>(null);
+  const [profileTarget, setProfileTarget] = useState<ProfileTarget | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [ambientOn, setAmbientOn] = useState(false);
 
   const storyRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -386,8 +462,68 @@ export default function Home() {
     return stories[day % stories.length];
   }, [stories]);
 
+  const confessionOfDay = useMemo(() => {
+    if (stories.length === 0) return null;
+
+    return [...stories].sort((a, b) => {
+      const aScore = total(a) + commentCount(a.id) * 2;
+      const bScore = total(b) + commentCount(b.id) * 2;
+      return bScore - aScore;
+    })[0];
+  }, [stories, comments]);
+
   const featuredStories = useMemo(() => stories.filter((story) => story.featured), [stories]);
   const editorPick = useMemo(() => featuredStories[0] || null, [featuredStories]);
+
+  const notifications = useMemo<NotificationItem[]>(() => {
+    if (!ownerKey) return [];
+
+    const seenRaw = typeof window !== "undefined" ? localStorage.getItem("storymask_seen_notifications") : null;
+    const seen = new Set(seenRaw ? JSON.parse(seenRaw) as string[] : []);
+
+    const items: NotificationItem[] = [];
+    const allComments = Object.values(comments).flat();
+
+    for (const story of stories) {
+      if (story.ownerKey !== ownerKey) continue;
+
+      for (const comment of allComments.filter((c) => c.story_id === story.id && c.owner_key !== ownerKey)) {
+        const id = `comment-${comment.id}`;
+        if (!seen.has(id)) {
+          items.push({
+            id,
+            title: `New comment on "${story.title}"`,
+            text: comment.text,
+            storyId: story.id,
+          });
+        }
+      }
+    }
+
+    const commentById: Record<number, Comment> = {};
+    allComments.forEach((comment) => {
+      commentById[comment.id] = comment;
+    });
+
+    for (const comment of allComments) {
+      if (!comment.parent_id || comment.owner_key === ownerKey) continue;
+
+      const parent = commentById[comment.parent_id];
+      if (!parent || parent.owner_key !== ownerKey) continue;
+
+      const id = `reply-${comment.id}`;
+      if (!seen.has(id)) {
+        items.push({
+          id,
+          title: "New reply to your comment",
+          text: comment.text,
+          storyId: comment.story_id,
+        });
+      }
+    }
+
+    return items.slice(0, 12);
+  }, [comments, stories, ownerKey]);
 
   const filteredStories = useMemo(() => {
     let result = [...stories];
@@ -409,6 +545,49 @@ export default function Home() {
 
     return result;
   }, [stories, activeCategory, search, sortMode]);
+
+  const profileStories = useMemo(() => {
+    if (!profileTarget) return [];
+
+    return stories.filter((story) => (story.ownerKey || `story-${story.id}`) === profileTarget.seed);
+  }, [profileTarget, stories]);
+
+  const profileComments = useMemo(() => {
+    if (!profileTarget) return [];
+
+    return Object.values(comments)
+      .flat()
+      .filter((comment) => (comment.owner_key || `comment-${comment.id}`) === profileTarget.seed);
+  }, [profileTarget, comments]);
+
+  function openProfile(nicknameValue: string, seed: string | null | undefined) {
+    setProfileTarget({
+      nickname: nicknameValue || "anonymous",
+      seed: seed || nicknameValue || "anonymous",
+    });
+  }
+
+  function markNotificationsRead() {
+    const oldRaw = localStorage.getItem("storymask_seen_notifications");
+    const old = oldRaw ? JSON.parse(oldRaw) as string[] : [];
+    const next = Array.from(new Set([...old, ...notifications.map((item) => item.id)]));
+    localStorage.setItem("storymask_seen_notifications", JSON.stringify(next));
+    setShowNotifications(false);
+  }
+
+  function jumpToStory(storyId: number) {
+    setOpenedStory(null);
+    setProfileTarget(null);
+    setActiveCategory("All");
+    setSearch("");
+    setHighlightedId(storyId);
+
+    setTimeout(() => {
+      storyRefs.current[storyId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+
+    setTimeout(() => setHighlightedId(null), 3500);
+  }
 
   async function publishStory() {
     const realKey = ownerKey || getOwnerKeyNow();
@@ -532,6 +711,10 @@ export default function Home() {
       return;
     }
 
+    if (openedStory?.id === story.id) {
+      setOpenedStory(null);
+    }
+
     await loadEverything(realKey);
   }
 
@@ -551,6 +734,11 @@ export default function Home() {
 
     await navigator.clipboard.writeText(link);
     alert(t.copied);
+  }
+
+  async function shareConfessionOfDay() {
+    if (!confessionOfDay) return;
+    await shareStory(confessionOfDay);
   }
 
   function randomStory() {
@@ -588,6 +776,31 @@ export default function Home() {
     bird.stop(start + 0.42);
   }
 
+  function startDistantTrain(context: AudioContext, masterGain: GainNode) {
+    const start = context.currentTime;
+    const train = context.createOscillator();
+    const trainGain = context.createGain();
+    const filter = context.createBiquadFilter();
+
+    train.type = "sine";
+    train.frequency.setValueAtTime(70, start);
+    train.frequency.linearRampToValueAtTime(58, start + 8);
+
+    trainGain.gain.setValueAtTime(0.0001, start);
+    trainGain.gain.linearRampToValueAtTime(0.012, start + 2);
+    trainGain.gain.linearRampToValueAtTime(0.0001, start + 9);
+
+    filter.type = "lowpass";
+    filter.frequency.value = 250;
+
+    train.connect(filter);
+    filter.connect(trainGain);
+    trainGain.connect(masterGain);
+
+    train.start(start);
+    train.stop(start + 9.5);
+  }
+
   function toggleAmbient() {
     if (ambientOn) {
       if (intervalRef.current) {
@@ -611,7 +824,7 @@ export default function Home() {
 
     const context = new AudioContextClass();
     const masterGain = context.createGain();
-    masterGain.gain.value = 0.035;
+    masterGain.gain.value = 0.032;
     masterGain.connect(context.destination);
 
     const bufferSize = context.sampleRate * 4;
@@ -620,8 +833,8 @@ export default function Home() {
 
     let last = 0;
     for (let i = 0; i < bufferSize; i++) {
-      last = last * 0.992 + (Math.random() * 2 - 1) * 0.008;
-      data[i] = last * 0.45;
+      last = last * 0.993 + (Math.random() * 2 - 1) * 0.007;
+      data[i] = last * 0.4;
     }
 
     const wind = context.createBufferSource();
@@ -630,10 +843,10 @@ export default function Home() {
 
     const windFilter = context.createBiquadFilter();
     windFilter.type = "lowpass";
-    windFilter.frequency.value = 420;
+    windFilter.frequency.value = 380;
 
     const windGain = context.createGain();
-    windGain.gain.value = 0.32;
+    windGain.gain.value = 0.3;
 
     wind.connect(windFilter);
     windFilter.connect(windGain);
@@ -644,28 +857,41 @@ export default function Home() {
     const airGain = context.createGain();
 
     airTone.type = "sine";
-    airTone.frequency.value = 92;
-    airGain.gain.value = 0.006;
+    airTone.frequency.value = 88;
+    airGain.gain.value = 0.004;
 
     airTone.connect(airGain);
     airGain.connect(masterGain);
     airTone.start();
 
-    const firstBirds = [3, 11, 22];
-    firstBirds.forEach((delay) => {
+    const cricket = context.createOscillator();
+    const cricketGain = context.createGain();
+    cricket.type = "triangle";
+    cricket.frequency.value = 4200;
+    cricketGain.gain.value = 0.0018;
+    cricket.connect(cricketGain);
+    cricketGain.connect(masterGain);
+    cricket.start();
+
+    [4, 13, 27].forEach((delay) => {
       window.setTimeout(() => {
         if (audioRef.current) startBird(context, masterGain);
       }, delay * 1000);
     });
 
+    window.setTimeout(() => {
+      if (audioRef.current) startDistantTrain(context, masterGain);
+    }, 18000);
+
     intervalRef.current = window.setInterval(() => {
-      if (audioRef.current && Math.random() > 0.35) {
-        startBird(context, masterGain);
-      }
-    }, 16000);
+      if (!audioRef.current) return;
+
+      if (Math.random() > 0.35) startBird(context, masterGain);
+      if (Math.random() > 0.86) startDistantTrain(context, masterGain);
+    }, 18000);
 
     audioRef.current = context;
-    audioNodesRef.current = [masterGain, windFilter, windGain, airGain];
+    audioNodesRef.current = [masterGain, windFilter, windGain, airGain, cricketGain];
     setAmbientOn(true);
   }
 
@@ -683,6 +909,7 @@ export default function Home() {
             nickname={comment.nickname}
             seed={comment.owner_key || `comment-${comment.id}`}
             language={language}
+            onClick={() => openProfile(comment.nickname, comment.owner_key || `comment-${comment.id}`)}
           />
         </b>
         <p>{comment.text}</p>
@@ -718,7 +945,12 @@ export default function Home() {
       <div style={styles.previewCard} onClick={() => openStory(story)}>
         <div style={styles.cardTop}>
           <p style={styles.meta}>
-            <UserLabel nickname={story.nickname} seed={story.ownerKey || `story-${story.id}`} language={language} />
+            <UserLabel
+              nickname={story.nickname}
+              seed={story.ownerKey || `story-${story.id}`}
+              language={language}
+              onClick={() => openProfile(story.nickname, story.ownerKey || `story-${story.id}`)}
+            />
             {" · "}
             {story.createdAt}
           </p>
@@ -808,6 +1040,11 @@ export default function Home() {
         {ambientOn ? `🌙 ${t.ambientOn}` : `🍃 ${t.ambientOff}`}
       </button>
 
+      <button onClick={() => setShowNotifications(true)} style={styles.notificationButton}>
+        🔔
+        {notifications.length > 0 && <span style={styles.notificationBadge}>{notifications.length}</span>}
+      </button>
+
       <section style={styles.hero}>
         <div>
           <p style={styles.logo}>{t.logo}</p>
@@ -840,7 +1077,12 @@ export default function Home() {
               <h2 style={styles.pickTitle}>{editorPick.title}</h2>
               <p style={styles.pickText}>{editorPick.text.slice(0, 210)}...</p>
               <p style={styles.pickMeta}>
-                <UserLabel nickname={editorPick.nickname} seed={editorPick.ownerKey || `story-${editorPick.id}`} language={language} />
+                <UserLabel
+                  nickname={editorPick.nickname}
+                  seed={editorPick.ownerKey || `story-${editorPick.id}`}
+                  language={language}
+                  onClick={() => openProfile(editorPick.nickname, editorPick.ownerKey || `story-${editorPick.id}`)}
+                />
                 {" · "}
                 {editorPick.category}
               </p>
@@ -854,6 +1096,20 @@ export default function Home() {
               <p style={styles.storyDayText}>{storyOfDay.text.slice(0, 180)}...</p>
             </div>
           )}
+        </section>
+      )}
+
+      {confessionOfDay && (
+        <section style={styles.confessionBox}>
+          <div onClick={() => openStory(confessionOfDay)} style={{ cursor: "pointer" }}>
+            <p style={styles.pickLabel}>☾ {t.confessionDay}</p>
+            <h2 style={styles.confessionTitle}>{confessionOfDay.title}</h2>
+            <p style={styles.confessionText}>{confessionOfDay.text.slice(0, 260)}...</p>
+          </div>
+
+          <button onClick={shareConfessionOfDay} style={styles.confessionButton}>
+            ↗ {t.share}
+          </button>
         </section>
       )}
 
@@ -927,7 +1183,12 @@ export default function Home() {
               >
                 <div style={styles.cardTop} onClick={() => openStory(story)}>
                   <p style={styles.meta}>
-                    <UserLabel nickname={story.nickname} seed={story.ownerKey || `story-${story.id}`} language={language} />
+                    <UserLabel
+                      nickname={story.nickname}
+                      seed={story.ownerKey || `story-${story.id}`}
+                      language={language}
+                      onClick={() => openProfile(story.nickname, story.ownerKey || `story-${story.id}`)}
+                    />
                     {" · "}
                     {story.createdAt}
                   </p>
@@ -1022,7 +1283,12 @@ export default function Home() {
             </button>
 
             <p style={styles.meta}>
-              <UserLabel nickname={openedStory.nickname} seed={openedStory.ownerKey || `story-${openedStory.id}`} language={language} />
+              <UserLabel
+                nickname={openedStory.nickname}
+                seed={openedStory.ownerKey || `story-${openedStory.id}`}
+                language={language}
+                onClick={() => openProfile(openedStory.nickname, openedStory.ownerKey || `story-${openedStory.id}`)}
+              />
               {" · "}
               {openedStory.createdAt}
             </p>
@@ -1077,6 +1343,77 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {profileTarget && (
+        <div style={styles.modalOverlay} onClick={() => setProfileTarget(null)}>
+          <div style={styles.profileModal} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setProfileTarget(null)} style={styles.modalClose}>
+              ×
+            </button>
+
+            <p style={styles.logo}>{t.profile}</p>
+            <h2 style={styles.profileName}>
+              <UserLabel nickname={profileTarget.nickname} seed={profileTarget.seed} language={language} />
+            </h2>
+
+            <div style={styles.profileStats}>
+              <div style={styles.statMini}>
+                <b>{profileStories.length}</b>
+                <span>{t.profileStories}</span>
+              </div>
+              <div style={styles.statMini}>
+                <b>{profileComments.length}</b>
+                <span>{t.profileComments}</span>
+              </div>
+            </div>
+
+            <h3>{t.profileStories}</h3>
+            {profileStories.length === 0 && <p style={styles.muted}>No stories yet.</p>}
+            {profileStories.map((story) => (
+              <div key={story.id} style={styles.profileItem} onClick={() => openStory(story)}>
+                <b>{story.title}</b>
+                <p>{story.text.slice(0, 140)}...</p>
+              </div>
+            ))}
+
+            <h3>{t.profileComments}</h3>
+            {profileComments.length === 0 && <p style={styles.muted}>No comments yet.</p>}
+            {profileComments.map((comment) => (
+              <div key={comment.id} style={styles.profileItem} onClick={() => jumpToStory(comment.story_id)}>
+                <p>{comment.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showNotifications && (
+        <div style={styles.modalOverlay} onClick={() => setShowNotifications(false)}>
+          <div style={styles.notificationPanel} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowNotifications(false)} style={styles.modalClose}>
+              ×
+            </button>
+
+            <p style={styles.logo}>{t.notifications}</p>
+            <h2 style={styles.modalTitle}>🔔 {t.notifications}</h2>
+
+            {notifications.length === 0 && <p style={styles.muted}>{t.noNotifications}</p>}
+
+            {notifications.map((item) => (
+              <div key={item.id} style={styles.notificationItem} onClick={() => jumpToStory(item.storyId)}>
+                <b>{item.title}</b>
+                <p>{item.text.slice(0, 160)}</p>
+              </div>
+            ))}
+
+            {notifications.length > 0 && (
+              <button onClick={markNotificationsRead} style={styles.publishButton}>
+                Mark as read
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -1127,6 +1464,31 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
     boxShadow: "0 0 25px rgba(168,85,247,.25)",
   },
+  notificationButton: {
+    position: "fixed",
+    right: "22px",
+    bottom: "76px",
+    zIndex: 50,
+    background: "rgba(10,10,10,.86)",
+    color: "#e9d5ff",
+    border: "1px solid #581c87",
+    borderRadius: "999px",
+    width: "48px",
+    height: "48px",
+    cursor: "pointer",
+    boxShadow: "0 0 25px rgba(168,85,247,.25)",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: "-6px",
+    right: "-4px",
+    background: "#ef4444",
+    color: "white",
+    borderRadius: "999px",
+    padding: "2px 6px",
+    fontSize: "12px",
+    fontWeight: "bold",
+  },
   hero: {
     maxWidth: "1200px",
     margin: "0 auto",
@@ -1142,7 +1504,7 @@ const styles: Record<string, CSSProperties> = {
     position: "relative",
     zIndex: 1,
   },
-  heroActions: { display: "flex", gap: "12px", alignItems: "flex-start" },
+  heroActions: { display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" },
   logo: { color: "#c084fc", letterSpacing: "5px", fontSize: "13px" },
   title: {
     fontSize: "70px",
@@ -1204,6 +1566,33 @@ const styles: Record<string, CSSProperties> = {
   storyDayLabel: { color: "#d8b4fe", letterSpacing: "4px", fontSize: "12px" },
   storyDayTitle: { fontSize: "32px", margin: "8px 0" },
   storyDayText: { color: "#d4d4d8", fontSize: "17px" },
+  confessionBox: {
+    maxWidth: "1200px",
+    margin: "0 auto 25px",
+    padding: "26px",
+    borderRadius: "26px",
+    background:
+      "linear-gradient(135deg, rgba(12,12,12,.92), rgba(30,10,48,.78)), radial-gradient(circle at top left, rgba(168,85,247,.18), transparent 35%)",
+    border: "1px solid #3b0764",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "18px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    position: "relative",
+    zIndex: 1,
+  },
+  confessionTitle: { fontSize: "30px", margin: "8px 0" },
+  confessionText: { color: "#d4d4d8", fontSize: "17px", lineHeight: "1.6" },
+  confessionButton: {
+    background: "#7e22ce",
+    color: "white",
+    border: "none",
+    borderRadius: "14px",
+    padding: "13px 18px",
+    fontWeight: "bold",
+    cursor: "pointer",
+  },
   featuredStrip: {
     maxWidth: "1200px",
     margin: "0 auto 25px",
@@ -1485,6 +1874,28 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: "0 0 80px rgba(168,85,247,.28)",
     position: "relative",
   },
+  profileModal: {
+    width: "min(780px, 100%)",
+    maxHeight: "86vh",
+    overflowY: "auto",
+    background: "linear-gradient(145deg, rgba(12,12,12,.98), rgba(35,10,55,.96))",
+    border: "1px solid #7e22ce",
+    borderRadius: "30px",
+    padding: "30px",
+    boxShadow: "0 0 80px rgba(168,85,247,.28)",
+    position: "relative",
+  },
+  notificationPanel: {
+    width: "min(640px, 100%)",
+    maxHeight: "86vh",
+    overflowY: "auto",
+    background: "linear-gradient(145deg, rgba(12,12,12,.98), rgba(35,10,55,.96))",
+    border: "1px solid #7e22ce",
+    borderRadius: "30px",
+    padding: "30px",
+    boxShadow: "0 0 80px rgba(168,85,247,.28)",
+    position: "relative",
+  },
   modalClose: {
     position: "absolute",
     top: "18px",
@@ -1500,4 +1911,37 @@ const styles: Record<string, CSSProperties> = {
   },
   modalTitle: { fontSize: "40px", marginTop: "20px", marginBottom: "16px" },
   modalText: { color: "#e5e5e5", fontSize: "20px", lineHeight: "1.8", whiteSpace: "pre-wrap" },
+  profileName: { fontSize: "32px", marginTop: "18px" },
+  profileStats: { display: "flex", gap: "12px", margin: "20px 0", flexWrap: "wrap" },
+  statMini: {
+    minWidth: "140px",
+    padding: "16px",
+    borderRadius: "18px",
+    background: "rgba(10,10,10,.8)",
+    border: "1px solid #27272a",
+    display: "flex",
+    flexDirection: "column",
+    gap: "4px",
+  },
+  profileItem: {
+    padding: "14px",
+    borderRadius: "14px",
+    background: "#0f0f0f",
+    border: "1px solid #27272a",
+    marginBottom: "10px",
+    cursor: "pointer",
+    color: "#d4d4d8",
+  },
+  notificationItem: {
+    padding: "16px",
+    borderRadius: "16px",
+    background: "#0f0f0f",
+    border: "1px solid #27272a",
+    marginBottom: "12px",
+    cursor: "pointer",
+    color: "#d4d4d8",
+  },
+  muted: {
+    color: "#888",
+  },
 };
