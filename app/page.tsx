@@ -593,18 +593,18 @@ export default function Home() {
     const realKey = ownerKey || getOwnerKeyNow();
     setOwnerKey(realKey);
 
-    if (!nickname.trim() || !title.trim() || !text.trim()) {
-      alert("Fill everything.");
-      return;
+    if (!title || !text) {
+      alert("Fill everything.")
+      return
     }
 
-    if (text.trim().length < 20) {
-      alert("Story is too short.");
-      return;
-    }
+    const finalNickname =
+  nickname.trim() !== ""
+    ? nickname.trim()
+    : "Anonymous"
 
     const { error } = await supabase.from("stories").insert({
-      nickname: nickname.trim().slice(0, 24),
+      nickname: finalNickname.slice(0, 24),
       category,
       title: title.trim().slice(0, 90),
       text: text.trim().slice(0, 2500),
