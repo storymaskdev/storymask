@@ -1240,7 +1240,7 @@ export default function Home() {
                 </div>
               </article>
 
-              {(index + 1) % 3 === 0 && <div style={styles.smallAd}>Advertisement space</div>}
+            
             </div>
           ))}
         </div>
