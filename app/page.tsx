@@ -1124,11 +1124,6 @@ export default function Home() {
         </section>
       )}
 
-      <div style={styles.adBox}>
-        <p style={styles.adSmall}>ADVERTISEMENT</p>
-        <p style={styles.adText}>Your ad could be here</p>
-      </div>
-
       <section className="storymask-grid" style={styles.grid}>
         <div>
           <input
