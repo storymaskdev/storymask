@@ -1199,8 +1199,10 @@ export default function Home() {
                   {story.title}
                 </h3>
                 <p onClick={() => openStory(story)} style={styles.storyText}>
-                  {story.text}
-                </p>
+  {story.text.length > 140
+    ? story.text.slice(0, 140) + "..."
+    : story.text}
+</p>
 
                 <div style={styles.reactions}>
                   <button onClick={() => react(story.id, "heart")} style={reactionStyle(myReaction[story.id] === "heart")}>❤️ {story.reactions.heart}</button>
