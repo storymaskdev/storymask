@@ -1209,6 +1209,10 @@ export default function Home() {
                   <button onClick={() => react(story.id, "shock")} style={reactionStyle(myReaction[story.id] === "shock")}>🤯 {story.reactions.shock}</button>
                 </div>
 
+                <p style={styles.commentsTitle}>
+  💬 {t.comments} ({commentCount(story.id)})
+</p>
+
                 <div style={styles.cardActions}>
                   <button onClick={() => shareStory(story)} style={styles.actionButton}>↗ {t.share}</button>
                   <button onClick={() => reportStory(story.id)} style={styles.actionButton}>
@@ -1221,23 +1225,7 @@ export default function Home() {
                   )}
                 </div>
 
-                <div style={styles.commentsBox}>
-                  <p style={styles.commentsTitle}>
-                    💬 {t.comments} <span style={styles.commentCounter}>({commentCount(story.id)})</span>
-                  </p>
-
-                  {renderComments(story)}
-
-                  <div className="comment-form-mobile" style={styles.commentForm}>
-                    <input
-                      placeholder={t.comment}
-                      value={commentTexts[story.id] || ""}
-                      onChange={(e) => setCommentTexts({ ...commentTexts, [story.id]: e.target.value })}
-                      style={styles.commentInput}
-                    />
-                    <button onClick={() => addComment(story.id)} style={styles.commentButton}>{t.send}</button>
-                  </div>
-                </div>
+                
               </article>
 
             
