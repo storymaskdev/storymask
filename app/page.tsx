@@ -1199,9 +1199,7 @@ export default function Home() {
                   {story.title}
                 </h3>
                 <p onClick={() => openStory(story)} style={styles.storyText}>
-  {story.text.length > 140
-    ? story.text.slice(0, 140) + "..."
-    : story.text}
+  {(story.text.split(".")[0] || story.text).slice(0, 180)}...
 </p>
 
                 <div style={styles.reactions}>
