@@ -1266,7 +1266,6 @@ export default function Home() {
 
           <button onClick={publishStory} style={styles.publishButton}>{t.publish}</button>
 
-          <div style={styles.formAd}>Advertisement</div>
         </aside>
       </section>
 
