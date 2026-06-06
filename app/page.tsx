@@ -951,11 +951,7 @@ export default function Home() {
   </button>
 )}
 
-        {comment.owner_key === ownerKey && (
-  <button onClick={() => deleteMyComment(comment)} style={styles.deleteCommentButton}>
-    Delete
-  </button>
-)}
+ 
 
         {replyingTo === comment.id && (
           <div style={styles.replyForm}>
