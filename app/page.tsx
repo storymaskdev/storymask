@@ -1237,8 +1237,6 @@ export default function Home() {
           <h2 style={styles.formTitle}>{t.write}</h2>
           <p style={styles.formText}>{t.formText}</p>
 
-          <input placeholder="Nickname" value={nickname} onChange={(e) => setNickname(e.target.value)} style={styles.input} />
-
           <select value={category} onChange={(e) => setCategory(e.target.value as Exclude<Category, "All">)} style={styles.input}>
             <option>Creepy</option>
             <option>Funny</option>
