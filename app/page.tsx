@@ -718,6 +718,30 @@ export default function Home() {
     await loadEverything(realKey);
   }
 
+  async function deleteMyComment(comment: Comment) {
+  const realKey = ownerKey || getOwnerKeyNow();
+
+  if (comment.owner_key !== realKey) {
+    alert("You can delete only your own comments.");
+    return;
+  }
+
+  if (!confirm("Delete this comment?")) return;
+
+  const { error } = await supabase
+    .from("comments")
+    .delete()
+    .eq("id", comment.id)
+    .eq("owner_key", realKey);
+
+  if (error) {
+    alert(error.message);
+    return;
+  }
+
+  await loadEverything(realKey);
+}
+
   async function shareStory(story: Story) {
     const link = `${window.location.origin}?story=${story.id}`;
 
@@ -917,6 +941,21 @@ export default function Home() {
         <button onClick={() => setReplyingTo(comment.id)} style={styles.replyButton}>
           {t.reply}
         </button>
+
+        {comment.owner_key === ownerKey && (
+  <button
+    onClick={() => deleteMyComment(comment)}
+    style={styles.deleteCommentButton}
+  >
+    Delete
+  </button>
+)}
+
+        {comment.owner_key === ownerKey && (
+  <button onClick={() => deleteMyComment(comment)} style={styles.deleteCommentButton}>
+    Delete
+  </button>
+)}
 
         {replyingTo === comment.id && (
           <div style={styles.replyForm}>
@@ -1744,6 +1783,17 @@ const styles: Record<string, CSSProperties> = {
     padding: 0,
     fontWeight: "bold",
   },
+
+  deleteCommentButton: {
+  marginLeft: "12px",
+  marginTop: "6px",
+  background: "transparent",
+  color: "#fca5a5",
+  border: "none",
+  cursor: "pointer",
+  padding: 0,
+  fontWeight: "bold",
+},
   replyForm: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" },
   commentForm: { display: "flex", gap: "10px", marginTop: "12px" },
   commentInput: {
