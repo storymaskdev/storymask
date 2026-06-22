@@ -13,8 +13,50 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://storymask.app"),
+
   title: "StoryMask",
-  description: "Share the story you never told anyone.",
+  description:
+    "Share your anonymous story. Read confessions, creepy stories, love stories and secrets from people around the world.",
+
+  keywords: [
+    "anonymous",
+    "stories",
+    "confessions",
+    "creepy",
+    "secrets",
+    "love",
+    "scary",
+    "story",
+    "anonymous stories",
+    "StoryMask",
+  ],
+
+  openGraph: {
+    title: "StoryMask",
+    description:
+      "Share your anonymous story. Read confessions from people around the world.",
+    url: "https://storymask.app",
+    siteName: "StoryMask",
+    locale: "en_US",
+    type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "StoryMask",
+      },
+    ],
+  },
+
+  twitter: {
+    card: "summary_large_image",
+    title: "StoryMask",
+    description:
+      "Share your anonymous story. Read confessions from people around the world.",
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({
