@@ -1323,7 +1323,7 @@ setImageChecking(false);
 
         <aside className="storymask-form" style={styles.formBox}>
           <h2 style={styles.formTitle}>{t.write}</h2>
-          <p style={styles.formText}>{t.formText}</p>
+          
 
           <select value={category} onChange={(e) => setCategory(e.target.value as Exclude<Category, "All">)} style={styles.input}>
             <option>Creepy</option>
