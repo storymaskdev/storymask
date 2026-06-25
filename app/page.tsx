@@ -18,6 +18,7 @@ type Story = {
   ownerKey: string | null;
   featured: boolean;
   reactions: Record<Reaction, number>;
+  image_url: string | null;
 };
 
 type Comment = {
@@ -39,6 +40,7 @@ type DbStory = {
   created_at: string;
   owner_key: string | null;
   featured: boolean | null;
+  image_url: string | null;
 };
 
 type DbReaction = {
@@ -354,6 +356,9 @@ export default function Home() {
   const [category, setCategory] = useState<Exclude<Category, "All">>("Creepy");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageChecking, setImageChecking] = useState(false);
   const [activeCategory, setActiveCategory] = useState<Category>("All");
   const [sortMode, setSortMode] = useState<SortMode>("new");
   const [language, setLanguage] = useState<Language>("en");
@@ -433,6 +438,7 @@ export default function Home() {
       createdAt: new Date(s.created_at).toLocaleString(),
       ownerKey: s.owner_key,
       featured: Boolean(s.featured),
+      image_url: s.image_url ?? null,
       reactions: reactionMap[s.id] || { heart: 0, laugh: 0, fear: 0, shock: 0 },
     }));
 
@@ -603,14 +609,57 @@ export default function Home() {
     ? nickname.trim()
     : "Anonymous"
 
-    const { error } = await supabase.from("stories").insert({
-      nickname: finalNickname.slice(0, 24),
-      category,
-      title: title.trim().slice(0, 90),
-      text: text.trim().slice(0, 2500),
-      owner_key: realKey,
-      featured: false,
-    });
+    let imageUrl = "";
+
+if (imageFile) {
+  setImageChecking(true);
+
+  const checkForm = new FormData();
+  checkForm.append("image", imageFile);
+
+  const checkResponse = await fetch("/api/check-image", {
+    method: "POST",
+    body: checkForm,
+  });
+
+  const checkResult = await checkResponse.json();
+
+  setImageChecking(false);
+
+  if (!checkResult.ok) {
+    alert(checkResult.error || "This image cannot be published.");
+    return;
+  }
+
+  const fileExt = imageFile.name.split(".").pop();
+  const fileName = `${realKey}-${Date.now()}.${fileExt}`;
+  const filePath = `stories/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("story-images")
+    .upload(filePath, imageFile);
+
+  if (uploadError) {
+    alert(uploadError.message);
+    return;
+  }
+
+  const { data } = supabase.storage
+    .from("story-images")
+    .getPublicUrl(filePath);
+
+  imageUrl = data.publicUrl;
+}
+
+const { error } = await supabase.from("stories").insert({
+  nickname: finalNickname.slice(0, 24),
+  category,
+  title: title.trim().slice(0, 90),
+  text: text.trim().slice(0, 2500),
+  owner_key: realKey,
+  featured: false,
+  image_url: imageUrl || null,
+});
 
     if (error) {
       alert(error.message);
@@ -619,6 +668,10 @@ export default function Home() {
 
     setTitle("");
     setText("");
+    setImageFile(null);
+setImagePreview("");
+setImageChecking(false);
+
     await loadEverything(realKey);
   }
 
@@ -1284,7 +1337,39 @@ export default function Home() {
           <input placeholder="Story title" value={title} onChange={(e) => setTitle(e.target.value)} style={styles.input} />
 
           <textarea placeholder="Your anonymous story..." value={text} onChange={(e) => setText(e.target.value)} style={styles.textarea} />
+           <input
+  type="file"
+  accept="image/png,image/jpeg,image/webp"
+  onChange={(e) => {
+    const file = e.target.files?.[0];
 
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image is too large. Max 5MB.");
+      return;
+    }
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }}
+  style={styles.input}
+/>
+
+{imagePreview && (
+  <div>
+    <img src={imagePreview} alt="Preview" style={styles.imagePreview} />
+    <button
+      onClick={() => {
+        setImageFile(null);
+        setImagePreview("");
+      }}
+      style={styles.actionButton}
+    >
+      Remove image
+    </button>
+  </div>
+)}
           <button onClick={publishStory} style={styles.publishButton}>{t.publish}</button>
 
         </aside>
@@ -1870,6 +1955,15 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: "bold",
     cursor: "pointer",
   },
+  imagePreview: {
+  width: "100%",
+  maxHeight: "300px",
+  objectFit: "cover",
+  borderRadius: "12px",
+  marginTop: "12px",
+  marginBottom: "12px",
+  border: "1px solid #444",
+},
   formAd: {
     marginTop: "20px",
     padding: "18px",

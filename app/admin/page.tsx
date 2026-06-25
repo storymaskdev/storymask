@@ -265,6 +265,21 @@ export default function AdminPage() {
           <div key={story.id} style={styles.storyItem}>
             <div>
               <p style={styles.meta}>#{story.id} · @{story.nickname} · {story.category}{story.featured ? " · ★ Featured" : ""}</p>
+
+              {story.image_url && (
+  <img
+    src={story.image_url}
+    alt={story.title}
+    style={{
+      width: "100%",
+      maxHeight: "320px",
+      objectFit: "cover",
+      borderRadius: "12px",
+      marginBottom: "12px",
+    }}
+  />
+)}
+
               <h3>{story.title}</h3>
               <p style={styles.storyText}>{story.text}</p>
             </div>
